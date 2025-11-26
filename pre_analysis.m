@@ -219,7 +219,7 @@ subplot(2,3,6), imhist(I_clean), title("Clean Histogram");
 clc,clear all,close all
 
 %% LOAD DEGRADED IMAGE
-I_degraded = imread("project_images/degraded/degraded_barbara.png");
+I_degraded = imread("project_images/degraded/degraded_boat.png");
 I_degraded = uint8(I_degraded);
 
 %% FIND SALT (255) AND PEPPER (0) PIXELS
@@ -236,7 +236,7 @@ P_sp = (num_pepper + num_salt) / total_pixels;   % salt & pepper ratio
 fprintf("Detected Salt & Pepper ratio in degraded image = %.5f\n", P_sp);
 
 %% NOW USE THIS VALUE IN NOISE GENERATION
-I_clean = imread("project_images/clean/original_barbara.png");
+I_clean = imread("project_images/clean/original_boat.png");
 I_clean = uint8(I_clean);
 
 I_gauss_sp = imnoise(I_clean, "gaussian", 0, 0.01);   % Gaussian noise
