@@ -126,84 +126,83 @@ for idx = 1:length(image_names)
 
 
 %% ============================================================
-% STEP 3 — Quantile Laplacian + Soft Sobel + Edge-Masked Sharpen
+% STEP 3 — Quantile Laplacian + Soft Sobel Fusion Sharpen
 %% ============================================================
 
-lambda = 0.4;            % Strong sharpen, PSNR-safe
-sigma  = 0.7;             % Smoothing
-sobel_weight = 0.5;      % VERY soft Sobel weight
+lambda = 0.28;     % ↑ stronger sharpening (0.22–0.32 ideal)
+sigma  = 0.7;      % smoothing
+sobel_weight = 0.15;   % ↓ weaker Sobel contribution
 
-fprintf("\n---- STEP 3: Laplacian + Masked Soft Sobel Sharpening ----\n");
+fprintf("\n---- STEP 3: Laplacian + Soft Sobel Sharpening ----\n");
 
 %% -------------------------
 % 3A — Raw Laplacian
 %% -------------------------
-I_lap = double(laplacian_filter(I_step2, "lap8"));
+I_lap = laplacian_filter(I_step2, "lap8");
+I_lap = double(I_lap);
 
-show_compare_images(I_original, I_step2, uint8(mat2gray(I_lap)*255), ...
+show_compare_images(I_original, I_step2, uint8(I_lap), ...
     "Step 3A: Raw Laplacian Edges");
 
 
 %% -------------------------
-% 3B — Quantile Thresholding (remove weak edges)
+% 3B — Quantile Thresholding (clean weak edges)
 %% -------------------------
 q = quantile(I_lap(:), 0.25);
+
 I_lap_thresh = I_lap;
 I_lap_thresh(abs(I_lap_thresh) < abs(q)) = 0;
 
-show_compare_images(I_original, I_step2, uint8(mat2gray(I_lap_thresh)*255), ...
-    "Step 3B: Thresholded Laplacian");
+I_3B = uint8(max(0, min(255, I_lap_thresh)));
+
+show_compare_images(I_original, I_step2, I_3B, ...
+    "Step 3B: Quantile-Thresholded Laplacian");
 
 
 %% -------------------------
-% 3C — Soft Sobel ( normalized )
+% 3C — Sobel Edge Extraction (weakened)
 %% -------------------------
 [Gx, Gy] = imgradientxy(I_step2);
 sobel_mag = abs(Gx) + abs(Gy);
 
-% normalize 0–1
-sobel_mag = sobel_mag / max(sobel_mag(:));
+sobel_scaled = sobel_weight * sobel_mag;  % ⭐ weaker Sobel
 
-sobel_soft = sobel_weight * sobel_mag;
+sobel_mag_uint8 = uint8(mat2gray(sobel_scaled) * 255);
 
-show_compare_images(I_original, I_step2, uint8(sobel_soft*255), ...
-    "Step 3C: Soft Sobel");
-
-
-%% -------------------------
-% 3D — Edge Mask (CRITICAL)
-%% -------------------------
-edge_strength = abs(I_lap_thresh);
-edge_strength = edge_strength / max(edge_strength(:)+1e-8);
-
-edge_mask = max( edge_strength , sobel_soft );
-edge_mask = imgaussfilt(edge_mask, 1.2);   % smooth mask
-
-show_compare_images(I_original, I_step2, uint8(edge_mask*255), ...
-    "Step 3D: Edge Mask");
+show_compare_images(I_original, I_step2, sobel_mag_uint8, ...
+    "Step 3C: Soft Sobel Edge Map");
 
 
 %% -------------------------
-% 3E — Detail Layer (PSNR-safe)
+% 3D — Combine Laplacian + Sobel
 %% -------------------------
-base = imguidedfilter(I_step2, 'NeighborhoodSize',[9 9], 'DegreeOfSmoothing',0.015);
-detail = double(I_step2) - double(base);
+combined_edges = double(I_3B) + double(sobel_scaled);
+combined_edges = max(0, min(255, combined_edges));
 
-% masked sharpening
-detail_boost = lambda * detail .* edge_mask;
+show_compare_images(I_original, I_step2, uint8(combined_edges), ...
+    "Step 3D: Combined Laplacian + Soft Sobel");
 
 
 %% -------------------------
-% 3F — Final Fusion
+% 3E — Smooth combined edges
 %% -------------------------
-I_step3 = double(I_step2) + detail_boost;
+combined_smooth = imgaussfilt(combined_edges, sigma);
+combined_smooth_uint8 = uint8(max(0, min(255, combined_smooth)));
+
+show_compare_images(I_original, I_step2, combined_smooth_uint8, ...
+    "Step 3E: Smoothed Combined Edges");
+
+
+%% -------------------------
+% 3F — Final Fusion With Base Image
+%% -------------------------
+I_step3 = double(I_step2) + lambda * combined_smooth;
 I_step3 = uint8(max(0, min(255, I_step3)));
 
 Results3 = compare_original_restored(I_original, I_step3);
 
 show_compare_images(I_original, I_step2, I_step3, ...
-    "Step 3F: Final Edge-Masked Guided Sharpen");
-
+    sprintf("Step 3F: Final Fusion (λ=%.3f, SOBEL=%.2f)", lambda, sobel_weight));
 
 
 
@@ -219,7 +218,7 @@ show_compare_images(I_original, I_step2, I_step3, ...
 Steps = ["STEP0 Degraded", ...
          "STEP1 Adaptive Median", ...
          "STEP2 Bilateral (Optimized)", ...
-         "STEP3 Quantile Laplacian + Soft Sobel Fusion Sharpen"];
+         "STEP3 Guided Sharpen (Optimized)"];
 
 MSE_values  = [MSE0,  Results1.MSE,  Results2.MSE,  Results3.MSE];
 PSNR_values = [PSNR0, Results1.PSNR, Results2.PSNR, Results3.PSNR];
