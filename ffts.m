@@ -50,9 +50,12 @@ F1_shifted = fftshift(F1);
 
 magnitude = log(1 + abs(F1_shifted));
 figure;
-subplot(1,2,1);
+subplot(1,4,1);
+imshow(uint8(img1));
+title('Original Image');
+subplot(1,4,2);
 imshow(magnitude, []); 
-title('FFT of Original');
+title('FFT of Original Image (log transformed)');
 
 img2 = imread('project_images/degraded/degraded_boat.png');
 
@@ -60,9 +63,14 @@ F2 = fft2(double(img2));
 F2_shifted = fftshift(F2);
 
 magnitude = log(1 + abs(F2_shifted));
-subplot(1,2,2);
+subplot(1,4,3);
 imshow(magnitude, []); 
-title('FFT of Degraded');
+title('FFT of Degraded Image (log transformed)');
+subplot(1,4,4);
+imshow(uint8(img2));
+title('Degraded Image');
+
+exportgraphics(gcf, 'fft_results.pdf');
 
 %% ---------------
 img1 = imread('project_images/clean/original_cameraman.png');
@@ -119,4 +127,4 @@ subplot(1,3,2);
 imshow(uint8(adaptive_median_filtering(im,9)));
 
 subplot(1,3,3);
-imshow(uint8(medfilt2(im, [3 3])));
+imshow(uint8(medfilt2(im, [5 5])));
