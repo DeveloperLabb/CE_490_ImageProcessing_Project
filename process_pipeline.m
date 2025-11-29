@@ -70,12 +70,10 @@ for idx = 1:length(image_names)
         "Step 1: Adaptive Median Filter");
     
     
-    
     %% ============================================================
     % STEP 2 — GRID SEARCH OPTIMIZED BILATERAL FILTER
     %% ============================================================
     
-    % Candidate parameter ranges
     sigmaColor_list   = [40, 80, 120, 160];
     sigmaSpatial_list = [4, 6, 8, 10];
     
@@ -86,20 +84,13 @@ for idx = 1:length(image_names)
     
     for sc = sigmaColor_list
         for ss = sigmaSpatial_list
-    
-            % Apply bilateral with candidate parameters
             candidate = imbilatfilt(I_step1, sc, ss);
-    
-            % Evaluate with metrics
             tmp = compare_original_restored(I_original, candidate);
-    
-            % Combined score = SSIM + PSNR/50
             score = tmp.SSIM + (tmp.PSNR / 50);
     
             fprintf("sigmaColor=%d, sigmaSpatial=%d --> Score=%.4f\n", ...
                 sc, ss, score);
     
-            % Keep best
             if score > best_score
                 best_score = score;
                 best_params = [sc, ss];
@@ -112,31 +103,26 @@ for idx = 1:length(image_names)
     fprintf("sigmaSpatial = %d\n", best_params(2));
     fprintf("BEST SCORE   = %.4f\n\n", best_score);
     
-    % Run bilateral with optimal parameters
-    opt_sigmaColor   = best_params(1);
-    opt_sigmaSpatial = best_params(2);
-    
-    I_step2 = imbilatfilt(I_step1, opt_sigmaColor, opt_sigmaSpatial);
+    I_step2 = imbilatfilt(I_step1, best_params(1), best_params(2));
     
     Results2 = compare_original_restored(I_original, I_step2);
     
     show_compare_images(I_original, I_step1, I_step2, ...
         sprintf("Step 2: Optimized Bilateral (C=%d, S=%d)", ...
-            opt_sigmaColor, opt_sigmaSpatial));
+            best_params(1), best_params(2)));
 
 
 %% ============================================================
 % STEP 3 — Quantile Laplacian + Soft Sobel + Edge-Masked Sharpen
 %% ============================================================
 
-lambda = 0.4;            % Strong sharpen, PSNR-safe
-sigma  = 0.7;             % Smoothing
-sobel_weight = 0.5;      % VERY soft Sobel weight
+lambda = 0.4;
+sobel_weight = 0.5;
 
 fprintf("\n---- STEP 3: Laplacian + Masked Soft Sobel Sharpening ----\n");
 
 %% -------------------------
-% 3A — Raw Laplacian
+% 3A — Laplacian
 %% -------------------------
 I_lap = double(laplacian_filter(I_step2, "lap8"));
 
@@ -145,7 +131,7 @@ show_compare_images(I_original, I_step2, uint8(mat2gray(I_lap)*255), ...
 
 
 %% -------------------------
-% 3B — Quantile Thresholding (remove weak edges)
+% 3B — Threshold Laplacian
 %% -------------------------
 q = quantile(I_lap(:), 0.25);
 I_lap_thresh = I_lap;
@@ -156,14 +142,11 @@ show_compare_images(I_original, I_step2, uint8(mat2gray(I_lap_thresh)*255), ...
 
 
 %% -------------------------
-% 3C — Soft Sobel ( normalized )
+% 3C — Soft Sobel
 %% -------------------------
 [Gx, Gy] = imgradientxy(I_step2);
 sobel_mag = abs(Gx) + abs(Gy);
-
-% normalize 0–1
 sobel_mag = sobel_mag / max(sobel_mag(:));
-
 sobel_soft = sobel_weight * sobel_mag;
 
 show_compare_images(I_original, I_step2, uint8(sobel_soft*255), ...
@@ -171,55 +154,48 @@ show_compare_images(I_original, I_step2, uint8(sobel_soft*255), ...
 
 
 %% -------------------------
-% 3D — Edge Mask (CRITICAL)
+% 3D — Edge Mask
 %% -------------------------
 edge_strength = abs(I_lap_thresh);
 edge_strength = edge_strength / max(edge_strength(:)+1e-8);
 
-edge_mask = max( edge_strength , sobel_soft );
-edge_mask = imgaussfilt(edge_mask, 1.2);   % smooth mask
+edge_mask = max(edge_strength, sobel_soft);
+edge_mask = imgaussfilt(edge_mask, 1.2);
 
 show_compare_images(I_original, I_step2, uint8(edge_mask*255), ...
     "Step 3D: Edge Mask");
 
 
-%% -------------------------
-% 3E — Detail Layer (PSNR-safe)
-%% -------------------------
-base = imguidedfilter(I_step2, 'NeighborhoodSize',[9 9], 'DegreeOfSmoothing',0.015);
-detail = double(I_step2) - double(base);
 
-% masked sharpening
-detail_boost = lambda * detail .* edge_mask;
+%% ============================================================
+% 3F — FINAL SHARPEN USING ONLY EDGE MASK (NO STEP 3E)
+%% ============================================================
 
+% Normalize Laplacian detail
+lap_detail_norm = I_lap_thresh / (max(abs(I_lap_thresh(:))) + 1e-8);
 
-%% -------------------------
-% 3F — Final Fusion
-%% -------------------------
+% Edge-masked boost
+detail_boost = lambda * lap_detail_norm .* edge_mask * 100;
+
+% Apply sharpening
 I_step3 = double(I_step2) + detail_boost;
 I_step3 = uint8(max(0, min(255, I_step3)));
 
 Results3 = compare_original_restored(I_original, I_step3);
 
 show_compare_images(I_original, I_step2, I_step3, ...
-    "Step 3F: Final Edge-Masked Guided Sharpen");
+    "Step 3F: Edge-Masked Laplacian Sharpening");
 
 
 
 
-
-
-
-
-
-
-  %% ============================================================
-% SUMMARY TABLE FOR THIS IMAGE
+%% ============================================================
+% SUMMARY
 %% ============================================================
 Steps = ["STEP0 Degraded", ...
          "STEP1 Adaptive Median", ...
          "STEP2 Bilateral (Optimized)", ...
-         "STEP3 Quantile Laplacian + Soft Sobel Fusion Sharpen"];
+         "STEP3 Laplacian + Edge Mask Sharpen"];
 
 MSE_values  = [MSE0,  Results1.MSE,  Results2.MSE,  Results3.MSE];
 PSNR_values = [PSNR0, Results1.PSNR, Results2.PSNR, Results3.PSNR];
@@ -231,30 +207,23 @@ SummaryTable = table(Steps', MSE_values', PSNR_values', SSIM_values', ...
 fprintf("\n===== METRIC SUMMARY FOR IMAGE: %s =====\n", upper(name));
 disp(SummaryTable);
 
-
-%% ============================================================
-% SAVE FINAL STEP METRICS FOR GLOBAL AVERAGE (FINAL = STEP 3)
-%% ============================================================
 All_MSE  = [All_MSE;  Results3.MSE];
 All_PSNR = [All_PSNR; Results3.PSNR];
 All_SSIM = [All_SSIM; Results3.SSIM];
 
-end  % LOOP END
+end % LOOP END
+
 
 
 
 %% ============================================================
-% GLOBAL AVERAGE METRICS ACROSS ALL IMAGES (FINAL STEP ONLY)
+% GLOBAL AVERAGES
 %% ============================================================
 fprintf("\n=============================================\n");
 fprintf("     GLOBAL AVERAGE METRICS ACROSS ALL IMAGES\n");
 fprintf("=============================================\n");
 
-global_MSE  = mean(All_MSE);
-global_PSNR = mean(All_PSNR);
-global_SSIM = mean(All_SSIM);
-
-fprintf("Global Average MSE  = %.4f\n", global_MSE);
-fprintf("Global Average PSNR = %.4f dB\n", global_PSNR);
-fprintf("Global Average SSIM = %.4f\n", global_SSIM);
+fprintf("Global Average MSE  = %.4f\n", mean(All_MSE));
+fprintf("Global Average PSNR = %.4f dB\n", mean(All_PSNR));
+fprintf("Global Average SSIM = %.4f\n", mean(All_SSIM));
 fprintf("=============================================\n\n");
