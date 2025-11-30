@@ -239,6 +239,8 @@ fprintf("Detected Salt & Pepper ratio in degraded image = %.5f\n", P_sp);
 I_clean = imread("project_images/clean/original_boat.png");
 I_clean = uint8(I_clean);
 
+I_clean = imgaussfilt(I_clean,1.75);
+
 I_gauss_sp = imnoise(I_clean, "gaussian", 0, 0.01);   % Gaussian noise
 I_gauss_sp = imnoise(I_gauss_sp, "salt & pepper", P_sp);   % S&P noise
 
@@ -254,10 +256,11 @@ I_synthetic_med = medfilt2(I_gauss_sp, [5 5]);   % Synthetic noisy → median
 figure; hold on;
 imhist(I_synthetic_med);
 imhist(I_degraded_med);
-legend("Synthetic + Median", "Real Degraded + Median");
-title("Histogram Comparison After Median Filtering");
+legend("Synthetic Image", "Real Degraded Image");
+title("Histogram Comparison of Synthetic and Real Images");
 hold off;
 
+exportgraphics(gcf, 'histogram_results.pdf');
 
 %% ============================================================
 % PERCENTAGE ERROR BASED ON MAX INTENSITY (255)
