@@ -1,30 +1,22 @@
 function Results = compare_original_restored(I_original, I_restored)
-%COMPARE_ORIGINAL_RESTORED
-%   Computes MSE, PSNR, and SSIM between:
-%       - Original
-%       - Restored
-%
-%   Returns a table with metrics.
+%COMPARE_ORIGINAL_RESTORED (0-1 scale)
+% Computes MSE/PSNR/SSIM on normalized [0,1] images.
+% MSE is normalized (0..1).
 
-    % Convert images to double
-    Io = double(I_original);
-    Ir = double(I_restored);
+    if ~isequal(size(I_original), size(I_restored))
+        error("Input images must have the same size.");
+    end
 
-    % --- MSE ---
-    mse = @(A,B) mean((A(:) - B(:)).^2);
+    % Convert both to double in [0,1]
+    Io = im2double(I_original);
+    Ir = im2double(I_restored);
 
-    % --- PSNR ---
-    psnr_calc = @(A,B) 10 * log10(255^2 / mse(A,B));
+    % Built-in metrics in 0-1 scale
+    MSE_val  = immse(Ir, Io);                         % 0-1 scale MSE
+    PSNR_val = psnr(Ir, Io, 1);                       % peak=1
+    SSIM_val = ssim(Ir, Io, "DynamicRange", 1);       % range=1
 
-    % --- SSIM ---
-    ssim_val = ssim(uint8(I_restored), uint8(I_original));
-
-    % Compute metrics
-    MSE_val  = mse(Io, Ir);
-    PSNR_val = psnr_calc(Io, Ir);
-
-    % Return results as table
-    Results = table(MSE_val, PSNR_val, ssim_val, ...
+    Results = table(MSE_val, PSNR_val, SSIM_val, ...
         'VariableNames', {'MSE','PSNR','SSIM'}, ...
         'RowNames', {'Restored'});
 end
