@@ -340,45 +340,19 @@ fprintf("Final Edge: %.6f | Noise: %.6f\n\n", edge_current, noise_current);
 show_compare_images(I_original, I_step2, I_step3, ...
     sprintf("Step 3: Iterative Sharpen (%d iters)", sharpen_iteration));
 
-% Canny Edge Detection Comparison
-figure('Name', sprintf('Canny Edge - %s', name));
-subplot(1,3,1);
-imshow(edge(I_original, 'canny'));
-title('Original - Canny Edge');
 
-subplot(1,3,2);
-imshow(edge(I_step2, 'canny'));
-title('Step 2 (NLM) - Canny Edge');
-
-subplot(1,3,3);
-imshow(edge(I_step3, 'canny'));
-title('Step 3 (Sharpen) - Canny Edge');
-
-sgtitle(sprintf('Canny Edge Comparison - %s', upper(name)));
 
 %% ============================================================
 % STEP 4 — EDGE-MASKED LAPLACIAN ENHANCEMENT
 %% ============================================================
 fprintf("\n--- STEP 4: Edge-Masked Laplacian Enhancement ---\n");
 
-% 1. I_step2 (NLM) → Canny edge → Erode → Dilate → edge mask
-canny_edge = edge(I_step2, 'canny');
-
-% Morphological operations
-%se = strel('square', 3);  % Yapısal eleman
-%edge_eroded = imerode(canny_edge, se);
-edge_mask = canny_edge;
-
-fprintf("Canny Edge: %d edge pixels\n", sum(canny_edge(:)));
-fprintf("After Erode->Dilate: %d edge pixels\n", sum(edge_mask(:)));
-
-% 2. I_step3 → Laplacian filter (sadece çıktı, enhance yok)
+% 1. I_step3 → Laplacian filter (sadece çıktı, enhance yok)
 laplacian_kernel = [0 -1 0; -1 4 -1; 0 -1 0];
 I_step3_double = im2double(I_step3);
 laplace_output = imfilter(I_step3_double, laplacian_kernel, 'symmetric');
 
-% 3. Laplacian çıktısı × Edge mask
-edge_mask_double = double(edge_mask);
+% 2. Laplacian çıktısı
 enhanced_edges = double(laplace_output);
 
 % Robust Gaussian noise variance estimate (MAD)
@@ -388,13 +362,13 @@ noise_var   = noise_sigma^2;
 % Wiener filter (küçük pencere = edge koruma)
 lap_smooth_w = wiener2(enhanced_edges, [3 3], noise_var);
 
-% 2️⃣ Light mean filter (VERY SMALL kernel)
+% Light mean filter (VERY SMALL kernel)
 meanKernel = fspecial('average', [3 3]);   % 3x3 max!
 lap_smooth = imfilter(lap_smooth_w, ...
                       meanKernel, ...
                       'symmetric');
 
-% 4. Sonuç + I_step2 = Final
+% 3. Sonuç + I_step2 = Final
 I_step2_double = im2double(I_step2);
 I_final = I_step2_double + lap_smooth;
 
@@ -414,22 +388,18 @@ imshow(I_step2);
 title('Step 2 (NLM)');
 
 subplot(2,3,2);
-imshow(edge_mask);
-title('Edge Mask (Canny→Erode→Dilate)');
-
-subplot(2,3,3);
 imshow(laplace_output, []);
 title('Laplacian of Step 3');
 
-subplot(2,3,4);
+subplot(2,3,3);
 imshow(enhanced_edges, []);
-title('Laplacian × Edge Mask');
+title('Laplacian');
 
-subplot(2,3,5);
+subplot(2,3,4);
 imshow(I_final);
 title('Final Result');
 
-subplot(2,3,6);
+subplot(2,3,5);
 imshow(I_original);
 title('Original');
 
@@ -553,29 +523,119 @@ fprintf("PSNR: %.4f dB | SSIM: %.4f\n\n", Results5.PSNR, Results5.SSIM);
 show_compare_images(I_original, I_final, I_step5, ...
     sprintf("Step 5: Iterative Gaussian (%d iters)", step5_iteration));
 
-    %% ============================================================
-    % SUMMARY FOR THIS IMAGE
-    %% ============================================================
+%% ============================================================
+% STEP 6 — ITERATIVE NLM AGAIN (Same as Step 2)
+%% ============================================================
+gaussian_threshold6    = 0.08;  % Step 6 için hedef (istersen 0.10 da yap)
+max_nlm_iterations6    = 5;
+
+I_step6 = I_step5;
+gaussian6_current = estimate_gaussian_noise(I_step6);
+nlm6_iteration = 0;
+
+fprintf("\n--- STEP 6: Iterative NLM Again (Gaussian Noise Reduction) ---\n");
+fprintf("Target Gaussian Threshold: %.2f\n", gaussian_threshold6);
+fprintf("Initial Gaussian Noise (Est.): %.3f\n\n", gaussian6_current);
+
+% Grid parameters for NLM
+degree_list6 = [5 10 15 20 30];
+sw_list6     = [11 21];
+cw_list6     = [3 5 7];
+
+while gaussian6_current > gaussian_threshold6 && nlm6_iteration < max_nlm_iterations6
+    nlm6_iteration = nlm6_iteration + 1;
+
+    fprintf("  [NLM6 Iteration %d] - Current Noise: %.3f\n", nlm6_iteration, gaussian6_current);
+    fprintf("  Grid Search başlatılıyor...\n");
+
+    best_noise6     = inf;
+    best_desc6      = "";
+    best_candidate6 = I_step6;
+
+    for deg = degree_list6
+        for sw = sw_list6
+            for cw = cw_list6
+                if cw > sw
+                    continue;
+                end
+
+                candidate = imnlmfilt(I_step6, ...
+                    "DegreeOfSmoothing", deg, ...
+                    "SearchWindowSize", sw, ...
+                    "ComparisonWindowSize", cw);
+
+                noise_est = estimate_gaussian_noise(candidate);
+
+                fprintf("    deg=%d SW=%d CW=%d -> Noise=%.3f\n", deg, sw, cw, noise_est);
+
+                if noise_est < best_noise6
+                    best_noise6     = noise_est;
+                    best_desc6      = sprintf("deg=%d,SW=%d,CW=%d", deg, sw, cw);
+                    best_candidate6 = candidate;
+                end
+            end
+        end
+    end
+
+    % Early stopping: iyileşme yoksa bu iterasyonda dur
+    if best_noise6 >= gaussian6_current
+        fprintf("\n    >>> No improvement found (Best: %.3f >= Current: %.3f)\n", ...
+            best_noise6, gaussian6_current);
+        fprintf("    >>> Early stopping - Step 6 terminated.\n\n");
+        break;
+    end
+
+    fprintf("\n    >>> Best: %s | Noise: %.3f -> %.3f (Improvement: %.3f)\n\n", ...
+        best_desc6, gaussian6_current, best_noise6, gaussian6_current - best_noise6);
+
+    I_step6 = best_candidate6;
+    gaussian6_current = best_noise6;
+end
+
+% Rapor
+if gaussian6_current <= gaussian_threshold6
+    fprintf("  >> Gaussian threshold (%.2f) reached after %d iterations!\n", ...
+        gaussian_threshold6, nlm6_iteration);
+elseif nlm6_iteration >= max_nlm_iterations6
+    fprintf("  >> Max NLM iterations (%d) reached. Final Gaussian: %.3f\n", ...
+        max_nlm_iterations6, gaussian6_current);
+else
+    fprintf("  >> Early stopped at iteration %d. Final Gaussian: %.3f\n", ...
+        nlm6_iteration, gaussian6_current);
+end
+
+Results6 = compare_original_restored(I_original, I_step6);
+
+fprintf("\n*** STEP 6 FINAL RESULT ***\n");
+fprintf("Total Iterations: %d\n", nlm6_iteration);
+fprintf("Final Gaussian Noise: %.3f\n", gaussian6_current);
+fprintf("PSNR: %.4f dB | SSIM: %.4f\n\n", Results6.PSNR, Results6.SSIM);
+
+show_compare_images(I_original, I_step5, I_step6, ...
+    sprintf("Step 6: Iterative NLM Again (%d iters)", nlm6_iteration));
+
+
     Steps = ["STEP0 Degraded", ...
-             "STEP1 Adaptive Median", ...
-             "STEP2 NLM", ...
-             "STEP4 Edge-Masked Laplacian", ...
-             "STEP5 Final Gaussian"];
+         "STEP1 Adaptive Median", ...
+         "STEP2 NLM", ...
+         "STEP4 Edge-Masked Laplacian", ...
+         "STEP5 Final Gaussian", ...
+         "STEP6 Brief NLM Again"];
 
-    MSE_values  = [MSE0,  Results1.MSE,  Results2.MSE,  Results4.MSE,  Results5.MSE];
-    PSNR_values = [PSNR0, Results1.PSNR, Results2.PSNR, Results4.PSNR, Results5.PSNR];
-    SSIM_values = [SSIM0, Results1.SSIM, Results2.SSIM, Results4.SSIM, Results5.SSIM];
+MSE_values  = [MSE0,  Results1.MSE,  Results2.MSE,  Results4.MSE,  Results5.MSE,  Results6.MSE];
+PSNR_values = [PSNR0, Results1.PSNR, Results2.PSNR, Results4.PSNR, Results5.PSNR, Results6.PSNR];
+SSIM_values = [SSIM0, Results1.SSIM, Results2.SSIM, Results4.SSIM, Results5.SSIM, Results6.SSIM];
 
-    SummaryTable = table(Steps', MSE_values', PSNR_values', SSIM_values', ...
-        'VariableNames', {'Step','MSE','PSNR','SSIM'});
+SummaryTable = table(Steps', MSE_values', PSNR_values', SSIM_values', ...
+    'VariableNames', {'Step','MSE','PSNR','SSIM'});
 
-    fprintf("\n===== METRIC SUMMARY FOR IMAGE: %s =====\n", upper(name));
-    disp(SummaryTable);
+fprintf("\n===== METRIC SUMMARY FOR IMAGE: %s =====\n", upper(name));
+disp(SummaryTable);
 
-    All_MSE  = [All_MSE;  Results5.MSE];
-    All_PSNR = [All_PSNR; Results5.PSNR];
-    All_SSIM = [All_SSIM; Results5.SSIM];
-
+% Final outputs should come from Step 6 now
+All_MSE  = [All_MSE;  Results6.MSE];
+All_PSNR = [All_PSNR; Results6.PSNR];
+All_SSIM = [All_SSIM; Results6.SSIM];
 end % LOOP END
 
 
