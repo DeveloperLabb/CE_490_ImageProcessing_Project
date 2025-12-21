@@ -216,70 +216,235 @@ for idx = 1:length(image_names)
 
 
 %% ============================================================
-% STEP 3 — REPEAT 5x: GRID SEARCH GAUSSIAN FREQ SHARPEN (NO-REFERENCE SCORE)
+% STEP 3 — ITERATIVE FREQ SHARPEN (Edge/Noise Ratio with Early Stopping)
 %% ============================================================
-fprintf("\n---- STEP 3: Grid Search (No-Reference Score) x5 ----\n");
+fprintf("\n--- STEP 3: Iterative Freq Sharpen (Edge > Noise Gain) ---\n");
 
-% Grid
-k_list      = [0.3 0.6 0.9 1.2 1.5 1.8 2.2];
-cutoff_list = [0.04 0.06 0.08 0.10 0.12];
-
-lambda = 0.9;   % penalty strength (0.6–1.2 typical)
-nRounds = 3;
+max_sharpen_iterations = 5;   % Maksimum iterasyon
 
 I_step3 = I_step2;
 
-best_desc3_each  = strings(nRounds,1);
-best_score3_each = zeros(nRounds,1);
+% Başlangıç değerlerini hesapla
+[edge_current, noise_current] = edge_noise_metrics(I_step3);
+sharpen_iteration = 0;
 
-for r = 1:nRounds
-    fprintf("\n  [Round %d/%d]\n", r, nRounds);
+fprintf("Initial Edge: %.6f | Noise: %.6f\n", edge_current, noise_current);
+fprintf("Rule: Continue while edge_gain > noise_gain\n\n");
 
-    % Baseline metrics from current input
+% Grid parameters
+k_list      = [0.3 0.5 0.7 0.9 1.1 1.3 1.5 1.8 2.0];
+cutoff_list = [0.03 0.05 0.07 0.09 0.11 0.13];
+
+while sharpen_iteration < max_sharpen_iterations
+    sharpen_iteration = sharpen_iteration + 1;
+    
+    % İterasyon öncesi mevcut durum
+    fprintf("  [Sharpen Iteration %d] - Edge: %.6f | Noise: %.6f\n", ...
+        sharpen_iteration, edge_current, noise_current);
+    fprintf("  Grid Search başlatılıyor...\n");
+    
+    % Baseline metrics (normalize için)
     [edge0, noise0] = edge_noise_metrics(I_step3);
-
-    best_score3 = -inf;
-    best_desc3  = "";
-    best_img    = I_step3;
-
+    
+    % Her iterasyonda en iyi parametreleri bul
+    % En iyi = noise_gain / edge_gain oranı en düşük olan
+    best_ratio = inf;  % noise_gain / edge_gain (düşük = iyi)
+    best_edge_gain = 0;
+    best_noise_gain = 0;
+    best_desc  = "";
+    best_candidate = I_step3;
+    
     for k = k_list
         for c = cutoff_list
             candidate = freq_highboost_gauss(I_step3, k, c);
-
-            % Compute no-reference score relative to current input
+            
+            % edge_noise_metrics ile scoring
             [edge1, noise1] = edge_noise_metrics(candidate);
-
-            edge_norm  = edge1  / (edge0  + 1e-12);
+            
+            % Normalize edilmiş oranlar
+            edge_norm  = edge1 / (edge0 + 1e-12);
             noise_norm = noise1 / (noise0 + 1e-12);
-
-            score = edge_norm - lambda * noise_norm;
-
-            fprintf("    k=%.2f c=%.3f | edgeN=%.3f noiseN=%.3f => score=%.4f\n", ...
-                k, c, edge_norm, noise_norm, score);
-
-            if score > best_score3
-                best_score3 = score;
-                best_desc3  = sprintf("k=%.2f,c=%.3f,lambda=%.2f", k, c, lambda);
-                best_img    = candidate;
+            
+            % Gain hesapla
+            edge_gain = edge_norm - 1.0;   % Edge ne kadar arttı
+            noise_gain = noise_norm - 1.0; % Noise ne kadar arttı
+            
+            % Oran: noise_gain / edge_gain (düşük = daha iyi)
+            % edge_gain <= 0 ise çok kötü, büyük oran ver
+            if edge_gain > 0
+                ratio = noise_gain / edge_gain;
+            else
+                ratio = inf;  % Edge artmadıysa skip
+            end
+            
+            fprintf("    k=%.2f c=%.3f | edge_gain=%.4f noise_gain=%.4f | ratio=%.4f\n", ...
+                k, c, edge_gain, noise_gain, ratio);
+            
+            % En düşük ratio olanı seç
+            if ratio < best_ratio
+                best_ratio = ratio;
+                best_edge_gain = edge_gain;
+                best_noise_gain = noise_gain;
+                best_desc = sprintf("k=%.2f,c=%.3f", k, c);
+                best_candidate = candidate;
             end
         end
     end
-
-    % update for next round
-    I_step3 = best_img;
-
-    best_desc3_each(r)  = string(best_desc3);
-    best_score3_each(r) = best_score3;
-
-    fprintf("  >>> Round %d winner: %s | Score=%.4f\n", r, best_desc3, best_score3);
+    
+    % Early stopping 1: ratio >= 3 ise dur
+    ratio_threshold = 3.0;
+    
+    if best_ratio >= ratio_threshold
+        fprintf("\n    >>> Stop: best ratio = %.4f >= %.1f threshold\n", ...
+            best_ratio, ratio_threshold);
+        fprintf("    >>> Noise increasing too fast. Early stopping.\n\n");
+        break;
+    end
+    
+    % En iyi adayın noise değerini kontrol et
+    [edge_new, noise_new] = edge_noise_metrics(best_candidate);
+    
+    % Early stopping 2: Noise 0.03'ün üstüne çıkarsa dur
+    noise_threshold = 0.03;
+    
+    if noise_new > noise_threshold
+        fprintf("\n    >>> Stop: noise = %.6f > %.4f threshold\n", ...
+            noise_new, noise_threshold);
+        fprintf("    >>> Noise too high. Not applying this iteration.\n\n");
+        break;
+    end
+    
+    % Uygula
+    fprintf("\n    >>> Best: %s\n", best_desc);
+    fprintf("    >>> Edge gain: %.4f | Noise gain: %.4f | Ratio: %.4f\n", ...
+        best_edge_gain, best_noise_gain, best_ratio);
+    fprintf("    >>> Edge: %.6f -> %.6f | Noise: %.6f -> %.6f\n\n", ...
+        edge_current, edge_new, noise_current, noise_new);
+    
+    I_step3 = best_candidate;
+    edge_current = edge_new;
+    noise_current = noise_new;
 end
 
-fprintf("\n*** STEP 3 FINAL (after %d rounds) ***\n", nRounds);
-disp(table((1:nRounds)', best_desc3_each, best_score3_each, ...
-    'VariableNames', {'Round','BestParams','BestScore'}));
+% Sonuç raporu
+if sharpen_iteration >= max_sharpen_iterations
+    fprintf("  >> Max sharpen iterations (%d) reached.\n", max_sharpen_iterations);
+else
+    fprintf("  >> Early stopped at iteration %d.\n", sharpen_iteration);
+end
+
+Results3 = compare_original_restored(I_original, I_step3);
+
+fprintf("\n*** STEP 3 FINAL RESULT ***\n");
+fprintf("Total Iterations: %d\n", sharpen_iteration);
+fprintf("Final Edge: %.6f | Noise: %.6f\n", edge_current, noise_current);
+fprintf("PSNR: %.4f dB | SSIM: %.4f\n\n", Results3.PSNR, Results3.SSIM);
 
 show_compare_images(I_original, I_step2, I_step3, ...
-    sprintf("Step 3: Best Freq Sharpen (NR) x%d", nRounds));
+    sprintf("Step 3: Iterative Sharpen (%d iters)", sharpen_iteration));
+
+% Canny Edge Detection Comparison
+figure('Name', sprintf('Canny Edge - %s', name));
+subplot(1,3,1);
+imshow(edge(I_original, 'canny'));
+title('Original - Canny Edge');
+
+subplot(1,3,2);
+imshow(edge(I_step2, 'canny'));
+title('Step 2 (NLM) - Canny Edge');
+
+subplot(1,3,3);
+imshow(edge(I_step3, 'canny'));
+title('Step 3 (Sharpen) - Canny Edge');
+
+sgtitle(sprintf('Canny Edge Comparison - %s', upper(name)));
+
+%% ============================================================
+% STEP 4 — EDGE-MASKED LAPLACIAN ENHANCEMENT
+%% ============================================================
+fprintf("\n--- STEP 4: Edge-Masked Laplacian Enhancement ---\n");
+
+% 1. I_step2 (NLM) → Canny edge → Erode → Dilate → edge mask
+canny_edge = edge(I_step2, 'canny');
+
+% Morphological operations
+%se = strel('square', 3);  % Yapısal eleman
+%edge_eroded = imerode(canny_edge, se);
+edge_mask = canny_edge;
+
+fprintf("Canny Edge: %d edge pixels\n", sum(canny_edge(:)));
+fprintf("After Erode->Dilate: %d edge pixels\n", sum(edge_mask(:)));
+
+% 2. I_step3 → Laplacian filter (sadece çıktı, enhance yok)
+laplacian_kernel = [0 -1 0; -1 4 -1; 0 -1 0];
+I_step3_double = im2double(I_step3);
+laplace_output = imfilter(I_step3_double, laplacian_kernel, 'symmetric');
+
+% 3. Laplacian çıktısı × Edge mask
+edge_mask_double = double(edge_mask);
+enhanced_edges = double(laplace_output);
+
+% Robust noise estimate (MAD)
+noise_sigma = median(abs(enhanced_edges(:))) / 0.6745;
+
+% Bilateral parameters (edge-preserving)
+spatialSigma   = 2.5;                 
+intensitySigma = 3 * noise_sigma;     
+
+% 1️⃣ Bilateral smoothing
+lap_bilateral = imbilatfilt(enhanced_edges, ...
+                            intensitySigma, ...
+                            spatialSigma);
+
+% 2️⃣ Light mean filter (VERY SMALL kernel)
+meanKernel = fspecial('average', [3 3]);   % 3x3 max!
+lap_smooth = imfilter(lap_bilateral, ...
+                      meanKernel, ...
+                      'replicate');
+
+% 4. Sonuç + I_step2 = Final
+I_step2_double = im2double(I_step2);
+I_final = I_step2_double + lap_smooth;
+
+% Clip to valid range [0, 1]
+I_final = max(0, min(1, I_final));
+I_final = im2uint8(I_final);
+
+Results4 = compare_original_restored(I_original, I_final);
+
+fprintf("\n*** STEP 4 FINAL RESULT ***\n");
+fprintf("PSNR: %.4f dB | SSIM: %.4f\n\n", Results4.PSNR, Results4.SSIM);
+
+% Visualization
+figure('Name', sprintf('Step 4 Process - %s', name));
+subplot(2,3,1);
+imshow(I_step2);
+title('Step 2 (NLM)');
+
+subplot(2,3,2);
+imshow(edge_mask);
+title('Edge Mask (Canny→Erode→Dilate)');
+
+subplot(2,3,3);
+imshow(laplace_output, []);
+title('Laplacian of Step 3');
+
+subplot(2,3,4);
+imshow(enhanced_edges, []);
+title('Laplacian × Edge Mask');
+
+subplot(2,3,5);
+imshow(I_final);
+title('Final Result');
+
+subplot(2,3,6);
+imshow(I_original);
+title('Original');
+
+sgtitle(sprintf('Step 4: Edge-Masked Laplacian - %s', upper(name)));
+
+show_compare_images(I_original, I_step3, I_final, ...
+    "Step 4: Edge-Masked Laplacian Enhancement");
 %% ============================================================
 % GRID SEARCH: imgaussfilt parameters (maximize PSNR)
 %% ============================================================
@@ -325,11 +490,12 @@ Results3 = compare_original_restored(I_original, I_step3);
     Steps = ["STEP0 Degraded", ...
              "STEP1 Adaptive Median", ...
              "STEP2 Best NLM (Grid Search)", ...
-             "STEP3 Edge-Masked Sharpen"];
+             "STEP3 Freq Sharpen", ...
+             "STEP4 Edge-Masked Laplacian"];
 
-    MSE_values  = [MSE0,  Results1.MSE,  Results2.MSE,  Results3.MSE];
-    PSNR_values = [PSNR0, Results1.PSNR, Results2.PSNR, Results3.PSNR];
-    SSIM_values = [SSIM0, Results1.SSIM, Results2.SSIM, Results3.SSIM];
+    MSE_values  = [MSE0,  Results1.MSE,  Results2.MSE,  Results3.MSE,  Results4.MSE];
+    PSNR_values = [PSNR0, Results1.PSNR, Results2.PSNR, Results3.PSNR, Results4.PSNR];
+    SSIM_values = [SSIM0, Results1.SSIM, Results2.SSIM, Results3.SSIM, Results4.SSIM];
 
     SummaryTable = table(Steps', MSE_values', PSNR_values', SSIM_values', ...
         'VariableNames', {'Step','MSE','PSNR','SSIM'});
@@ -337,9 +503,9 @@ Results3 = compare_original_restored(I_original, I_step3);
     fprintf("\n===== METRIC SUMMARY FOR IMAGE: %s =====\n", upper(name));
     disp(SummaryTable);
 
-    All_MSE  = [All_MSE;  Results3.MSE];
-    All_PSNR = [All_PSNR; Results3.PSNR];
-    All_SSIM = [All_SSIM; Results3.SSIM];
+    All_MSE  = [All_MSE;  Results4.MSE];
+    All_PSNR = [All_PSNR; Results4.PSNR];
+    All_SSIM = [All_SSIM; Results4.SSIM];
 
 end % LOOP END
 
