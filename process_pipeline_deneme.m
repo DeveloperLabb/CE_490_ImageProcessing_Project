@@ -382,7 +382,7 @@ edge_mask_double = double(edge_mask);
 enhanced_edges = double(laplace_output);
 
 % Robust Gaussian noise variance estimate (MAD)
-noise_sigma = median(abs(enhanced_edges(:))) / 0.6745;
+[dummy , noise_sigma] = edge_noise_metrics(I_step3_double);
 noise_var   = noise_sigma^2;
 
 % Wiener filter (küçük pencere = edge koruma)
@@ -439,48 +439,119 @@ show_compare_images(I_original, I_step3, I_final, ...
     "Step 4: Edge-Masked Laplacian Enhancement");
 
 %% ============================================================
-% STEP 5 — FINAL GAUSSIAN SMOOTHING (maximize PSNR)
+% STEP 5 — ITERATIVE GAUSSIAN SMOOTHING (Edge Preserve + Noise Reduce)
 %% ============================================================
-fprintf("\n--- STEP 5: Final Gaussian Smoothing (maximize PSNR) ---\n");
+fprintf("\n--- STEP 5: Iterative Gaussian Smoothing ---\n");
 
-% Step 4 çıktısını input olarak kullan
-I_step5_in = I_final;
+max_step5_iterations = 5;
+I_step5 = I_final;
 
-sigma_list = [0.01 0.05 0.1 0.2 0.3 0.4 0.5 0.6 0.8 1.0 1.2];
-fs_list    = [3 5 7 9 11 13 15 17];  % must be odd
+% Başlangıç edge/noise değerleri
+[edge_initial, noise_initial] = edge_noise_metrics(I_step5);
+[edge_current, noise_current] = edge_noise_metrics(I_step5);
+step5_iteration = 0;
+total_edge_loss = 0;  % Toplam edge kaybı
 
-best_psnr = -inf;
-best_desc = "";
-I_step5   = I_step5_in;
+fprintf("Initial Edge: %.6f | Noise: %.6f\n", edge_initial, noise_initial);
+fprintf("Rule: noise_red/edge_loss max, stop if total edge loss > 5%%\n\n");
 
-for sigma = sigma_list
-    for fs = fs_list
+% Grid parameters
+sigma_list = [0.01 0.05 0.1 0.2 0.3 0.4 0.5 0.6 0.8 1.0];
+fs_list    = [3 5 7 9 11 13];
 
-        candidate = imgaussfilt(I_step5_in, sigma, ...
-            "FilterSize", fs, ...
-            "Padding", "symmetric");
-
-        tmp = compare_original_restored(I_original, candidate);
-
-        fprintf("  sigma=%.2f FS=%d -> PSNR=%.4f dB (SSIM=%.4f)\n", ...
-            sigma, fs, tmp.PSNR, tmp.SSIM);
-
-        if tmp.PSNR > best_psnr
-            best_psnr = tmp.PSNR;
-            best_desc = sprintf("sigma=%.2f,FS=%d", sigma, fs);
-            I_step5   = candidate;
+while step5_iteration < max_step5_iterations
+    step5_iteration = step5_iteration + 1;
+    
+    fprintf("  [Iteration %d] - Edge: %.6f | Noise: %.6f | Total Edge Loss: %.2f%%\n", ...
+        step5_iteration, edge_current, noise_current, total_edge_loss*100);
+    fprintf("  Grid Search başlatılıyor...\n");
+    
+    % Baseline
+    [edge0, noise0] = edge_noise_metrics(I_step5);
+    
+    % En iyi: noise_red / edge_loss oranı en yüksek olan
+    best_ratio = -inf;
+    best_noise = inf;
+    best_edge_loss = 0;
+    best_desc = "";
+    best_candidate = I_step5;
+    found_valid = false;
+    
+    for sigma = sigma_list
+        for fs = fs_list
+            candidate = imgaussfilt(I_step5, sigma, ...
+                "FilterSize", fs, ...
+                "Padding", "symmetric");
+            
+            [edge1, noise1] = edge_noise_metrics(candidate);
+            
+            % Edge kaybı ve noise azalması
+            edge_loss = (edge0 - edge1) / (edge0 + 1e-12);
+            noise_reduction = (noise0 - noise1) / (noise0 + 1e-12);
+            
+            % Bu parametre uygulanırsa total edge loss ne olur?
+            potential_total_loss = (edge_initial - edge1) / (edge_initial + 1e-12);
+            
+            % noise_red / edge_loss oranı
+            if edge_loss > 0.001
+                ratio = noise_reduction / edge_loss;
+            else
+                ratio = noise_reduction * 100;
+            end
+            
+            fprintf("    sigma=%.2f FS=%d | edge_loss=%.4f noise_red=%.4f ratio=%.2f total=%.2f%%\n", ...
+                sigma, fs, edge_loss, noise_reduction, ratio, potential_total_loss*100);
+            
+            % Sadece total edge loss %5'in altında ve noise azalıyorsa seç
+            if potential_total_loss < 0.05 && noise_reduction > 0 && ratio > best_ratio
+                best_ratio = ratio;
+                best_noise = noise1;
+                best_edge_loss = edge_loss;
+                best_edge_new = edge1;
+                best_desc = sprintf("sigma=%.2f,FS=%d", sigma, fs);
+                best_candidate = candidate;
+                found_valid = true;
+            end
         end
     end
+    
+    % Early stopping: %5 altında noise azaltan parametre yoksa dur
+    if ~found_valid || best_noise >= noise_current
+        fprintf("\n    >>> Stop: no valid parameter (noise reduction + edge loss < 5%%)\n");
+        fprintf("    >>> Early stopping.\n\n");
+        break;
+    end
+    
+    % Uygula (zaten %5'in altında olanlar seçildi)
+    [edge_new, noise_new] = edge_noise_metrics(best_candidate);
+    total_edge_loss = (edge_initial - edge_new) / (edge_initial + 1e-12);
+    
+    fprintf("\n    >>> Best: %s | Ratio: %.2f\n", best_desc, best_ratio);
+    fprintf("    >>> Edge loss: %.2f%% | Noise: %.6f -> %.6f\n", ...
+        best_edge_loss*100, noise_current, noise_new);
+    fprintf("    >>> Total Edge Loss: %.2f%%\n\n", total_edge_loss*100);
+    
+    I_step5 = best_candidate;
+    edge_current = edge_new;
+    noise_current = noise_new;
+end
+
+% Sonuç
+if step5_iteration >= max_step5_iterations
+    fprintf("  >> Max iterations (%d) reached.\n", max_step5_iterations);
+else
+    fprintf("  >> Early stopped at iteration %d.\n", step5_iteration);
 end
 
 Results5 = compare_original_restored(I_original, I_step5);
 
 fprintf("\n*** STEP 5 FINAL RESULT ***\n");
-fprintf("Best Params: %s\n", best_desc);
+fprintf("Total Iterations: %d\n", step5_iteration);
+fprintf("Final Edge: %.6f | Noise: %.6f\n", edge_current, noise_current);
 fprintf("PSNR: %.4f dB | SSIM: %.4f\n\n", Results5.PSNR, Results5.SSIM);
 
 show_compare_images(I_original, I_final, I_step5, ...
-    sprintf("Step 5: Final Gaussian (%s)", best_desc));
+    sprintf("Step 5: Iterative Gaussian (%d iters)", step5_iteration));
 
     %% ============================================================
     % SUMMARY FOR THIS IMAGE
