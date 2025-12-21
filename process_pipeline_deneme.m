@@ -333,12 +333,9 @@ else
     fprintf("  >> Early stopped at iteration %d.\n", sharpen_iteration);
 end
 
-Results3 = compare_original_restored(I_original, I_step3);
-
-fprintf("\n*** STEP 3 FINAL RESULT ***\n");
+fprintf("\n*** STEP 3 FINAL ***\n");
 fprintf("Total Iterations: %d\n", sharpen_iteration);
-fprintf("Final Edge: %.6f | Noise: %.6f\n", edge_current, noise_current);
-fprintf("PSNR: %.4f dB | SSIM: %.4f\n\n", Results3.PSNR, Results3.SSIM);
+fprintf("Final Edge: %.6f | Noise: %.6f\n\n", edge_current, noise_current);
 
 show_compare_images(I_original, I_step2, I_step3, ...
     sprintf("Step 3: Iterative Sharpen (%d iters)", sharpen_iteration));
@@ -384,23 +381,18 @@ laplace_output = imfilter(I_step3_double, laplacian_kernel, 'symmetric');
 edge_mask_double = double(edge_mask);
 enhanced_edges = double(laplace_output);
 
-% Robust noise estimate (MAD)
+% Robust Gaussian noise variance estimate (MAD)
 noise_sigma = median(abs(enhanced_edges(:))) / 0.6745;
+noise_var   = noise_sigma^2;
 
-% Bilateral parameters (edge-preserving)
-spatialSigma   = 2.5;                 
-intensitySigma = 3 * noise_sigma;     
-
-% 1️⃣ Bilateral smoothing
-lap_bilateral = imbilatfilt(enhanced_edges, ...
-                            intensitySigma, ...
-                            spatialSigma);
+% Wiener filter (küçük pencere = edge koruma)
+lap_smooth_w = wiener2(enhanced_edges, [3 3], noise_var);
 
 % 2️⃣ Light mean filter (VERY SMALL kernel)
 meanKernel = fspecial('average', [3 3]);   % 3x3 max!
-lap_smooth = imfilter(lap_bilateral, ...
+lap_smooth = imfilter(lap_smooth_w, ...
                       meanKernel, ...
-                      'replicate');
+                      'symmetric');
 
 % 4. Sonuç + I_step2 = Final
 I_step2_double = im2double(I_step2);
@@ -445,57 +437,63 @@ sgtitle(sprintf('Step 4: Edge-Masked Laplacian - %s', upper(name)));
 
 show_compare_images(I_original, I_step3, I_final, ...
     "Step 4: Edge-Masked Laplacian Enhancement");
-%% ============================================================
-% GRID SEARCH: imgaussfilt parameters (maximize PSNR)
-%% ============================================================
-fprintf("\n---- Grid Search: imgaussfilt (maximize PSNR) ----\n");
 
-% Keep a copy of the input to this step
-I_in = I_step3;
+%% ============================================================
+% STEP 5 — FINAL GAUSSIAN SMOOTHING (maximize PSNR)
+%% ============================================================
+fprintf("\n--- STEP 5: Final Gaussian Smoothing (maximize PSNR) ---\n");
 
-sigma_list = [0.2 0.3 0.4 0.5 0.6 0.8 1.0];
-fs_list    = [3 5 7 9];  % must be odd
+% Step 4 çıktısını input olarak kullan
+I_step5_in = I_final;
+
+sigma_list = [0.01 0.05 0.1 0.2 0.3 0.4 0.5 0.6 0.8 1.0 1.2];
+fs_list    = [3 5 7 9 11 13 15 17];  % must be odd
 
 best_psnr = -inf;
 best_desc = "";
-I_best    = I_in;
+I_step5   = I_step5_in;
 
 for sigma = sigma_list
     for fs = fs_list
 
-        candidate = imgaussfilt(I_in, sigma, ...
+        candidate = imgaussfilt(I_step5_in, sigma, ...
             "FilterSize", fs, ...
             "Padding", "symmetric");
 
         tmp = compare_original_restored(I_original, candidate);
 
-        fprintf("  sigma=%.2f FS=%d -> PSNR=%.4f dB (SSIM=%.4f, MSE=%.4f)\n", ...
-            sigma, fs, tmp.PSNR, tmp.SSIM, tmp.MSE);
+        fprintf("  sigma=%.2f FS=%d -> PSNR=%.4f dB (SSIM=%.4f)\n", ...
+            sigma, fs, tmp.PSNR, tmp.SSIM);
 
         if tmp.PSNR > best_psnr
             best_psnr = tmp.PSNR;
             best_desc = sprintf("sigma=%.2f,FS=%d", sigma, fs);
-            I_best    = candidate;
+            I_step5   = candidate;
         end
     end
 end
 
-I_step3 = I_best;
+Results5 = compare_original_restored(I_original, I_step5);
 
-Results3 = compare_original_restored(I_original, I_step3);
+fprintf("\n*** STEP 5 FINAL RESULT ***\n");
+fprintf("Best Params: %s\n", best_desc);
+fprintf("PSNR: %.4f dB | SSIM: %.4f\n\n", Results5.PSNR, Results5.SSIM);
+
+show_compare_images(I_original, I_final, I_step5, ...
+    sprintf("Step 5: Final Gaussian (%s)", best_desc));
 
     %% ============================================================
     % SUMMARY FOR THIS IMAGE
     %% ============================================================
     Steps = ["STEP0 Degraded", ...
              "STEP1 Adaptive Median", ...
-             "STEP2 Best NLM (Grid Search)", ...
-             "STEP3 Freq Sharpen", ...
-             "STEP4 Edge-Masked Laplacian"];
+             "STEP2 NLM", ...
+             "STEP4 Edge-Masked Laplacian", ...
+             "STEP5 Final Gaussian"];
 
-    MSE_values  = [MSE0,  Results1.MSE,  Results2.MSE,  Results3.MSE,  Results4.MSE];
-    PSNR_values = [PSNR0, Results1.PSNR, Results2.PSNR, Results3.PSNR, Results4.PSNR];
-    SSIM_values = [SSIM0, Results1.SSIM, Results2.SSIM, Results3.SSIM, Results4.SSIM];
+    MSE_values  = [MSE0,  Results1.MSE,  Results2.MSE,  Results4.MSE,  Results5.MSE];
+    PSNR_values = [PSNR0, Results1.PSNR, Results2.PSNR, Results4.PSNR, Results5.PSNR];
+    SSIM_values = [SSIM0, Results1.SSIM, Results2.SSIM, Results4.SSIM, Results5.SSIM];
 
     SummaryTable = table(Steps', MSE_values', PSNR_values', SSIM_values', ...
         'VariableNames', {'Step','MSE','PSNR','SSIM'});
@@ -503,9 +501,9 @@ Results3 = compare_original_restored(I_original, I_step3);
     fprintf("\n===== METRIC SUMMARY FOR IMAGE: %s =====\n", upper(name));
     disp(SummaryTable);
 
-    All_MSE  = [All_MSE;  Results4.MSE];
-    All_PSNR = [All_PSNR; Results4.PSNR];
-    All_SSIM = [All_SSIM; Results4.SSIM];
+    All_MSE  = [All_MSE;  Results5.MSE];
+    All_PSNR = [All_PSNR; Results5.PSNR];
+    All_SSIM = [All_SSIM; Results5.SSIM];
 
 end % LOOP END
 
