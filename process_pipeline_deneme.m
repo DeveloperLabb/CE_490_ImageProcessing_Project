@@ -503,7 +503,7 @@ while step5_iteration < max_step5_iterations
                 sigma, fs, edge_loss, noise_reduction, ratio, potential_total_loss*100);
             
             % Sadece total edge loss %5'in altında ve noise azalıyorsa seç
-            if potential_total_loss < 0.05 && noise_reduction > 0 && ratio > best_ratio
+            if potential_total_loss < 0.1 && noise_reduction > 0 && ratio > best_ratio
                 best_ratio = ratio;
                 best_noise = noise1;
                 best_edge_loss = edge_loss;
