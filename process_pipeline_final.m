@@ -523,6 +523,8 @@ fprintf("PSNR: %.4f dB | SSIM: %.4f\n\n", Results5.PSNR, Results5.SSIM);
 show_compare_images(I_original, I_final, I_step5, ...
     sprintf("Step 5: Iterative Gaussian (%d iters)", step5_iteration));
 
+save_pipeline_outputs("outputs", name, I_original, I_degraded, I_final);
+
 %% ============================================================
 % STEP 6 — ITERATIVE NLM AGAIN (Same as Step 2)
 %% ============================================================
