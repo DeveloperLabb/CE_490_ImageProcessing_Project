@@ -328,50 +328,8 @@
 \begin{frame}{Complete Pipeline Architecture}
     \begin{figure}
         \centering
-        \resizebox{\textwidth}{!}{
-        \begin{tikzpicture}[
-            node distance=1.2cm,
-            block/.style={rectangle, draw, fill=blue!20, minimum width=2.5cm, minimum height=1cm, align=center},
-            decision/.style={diamond, draw, fill=yellow!20, minimum width=1.5cm, align=center, aspect=2},
-            arrow/.style={->, thick}
-        ]
-            % Nodes
-            \node[block, fill=red!20] (input) {Degraded\\Image};
-            \node[block, right=of input] (step0) {STEP 0\\Noise\\Analysis};
-            \node[block, right=of step0] (step1) {STEP 1\\Adaptive\\Median};
-            \node[block, right=of step1] (step2) {STEP 2\\Iterative\\NLM};
-            \node[block, right=of step2] (step3) {STEP 3\\Freq\\Sharpen};
-            \node[block, right=of step3] (step4) {STEP 4\\Edge-Masked\\Laplacian};
-            \node[block, right=of step4] (step5) {STEP 5\\Gaussian\\Smoothing};
-            \node[block, fill=green!20, right=of step5] (output) {Restored\\Image};
-            
-            % Arrows
-            \draw[arrow] (input) -- (step0);
-            \draw[arrow] (step0) -- (step1);
-            \draw[arrow] (step1) -- (step2);
-            \draw[arrow] (step2) -- (step3);
-            \draw[arrow] (step3) -- (step4);
-            \draw[arrow] (step4) -- (step5);
-            \draw[arrow] (step5) -- (output);
-            
-            % Labels below
-            \node[below=0.3cm of step1, text=blue, font=\scriptsize] {S\&P Removal};
-            \node[below=0.3cm of step2, text=blue, font=\scriptsize] {Gaussian Removal};
-            \node[below=0.3cm of step3, text=blue, font=\scriptsize] {Sharpening};
-            \node[below=0.3cm of step4, text=blue, font=\scriptsize] {Edge Enhance};
-            \node[below=0.3cm of step5, text=blue, font=\scriptsize] {Final Polish};
-        \end{tikzpicture}
-        }
+        \includegraphics[width=\textwidth]{presentation/pipeline_diagram.pdf}
     \end{figure}
-    
-    \begin{block}{Pipeline Philosophy}
-        \begin{itemize}
-            \item \textbf{Progressive}: Each step builds on previous results
-            \item \textbf{Adaptive}: Parameters tuned per-image using grid search
-            \item \textbf{Iterative}: Steps repeat until convergence criteria met
-            \item \textbf{Metric-Driven}: Decisions based on quantitative measurements
-        \end{itemize}
-    \end{block}
 \end{frame}
 
 \begin{frame}{Pipeline Design Principles}
@@ -382,8 +340,9 @@
             \item \textbf{S\&P First}: Impulse noise must be removed before any smoothing/filtering
             \item \textbf{Then Gaussian}: NLM works best on clean (non-impulse) images
             \item \textbf{Then Sharpen}: Restore edges lost during denoising
-            \item \textbf{Edge Enhancement}: Targeted improvement using detected edges
-            \item \textbf{Final Polish}: Light smoothing to remove residual artifacts
+            \item \textbf{Edge Enhancement}: Targeted improvement using Laplacian
+            \item \textbf{Polish}: Light smoothing to remove residual artifacts
+            \item \textbf{Final NLM}: Remove any noise amplified by enhancement
         \end{enumerate}
         
         \column{0.5\textwidth}
@@ -477,39 +436,6 @@
     \end{columns}
 \end{frame}
 
-\begin{frame}{Step 1: Adaptive Median - Iterative Process}
-    \begin{figure}
-        \centering
-        \begin{tikzpicture}[
-            node distance=1.5cm,
-            block/.style={rectangle, draw, fill=blue!20, minimum width=3cm, minimum height=0.8cm},
-            decision/.style={diamond, draw, fill=yellow!20, aspect=2.5, inner sep=1pt},
-            arrow/.style={->, thick}
-        ]
-            \node[block] (start) {Input Image};
-            \node[block, below=of start] (amf) {Apply Adaptive Median (max window=5)};
-            \node[block, below=of amf] (measure) {Measure S\&P Ratio};
-            \node[decision, below=of measure] (check) {Ratio $<$ 1\%?};
-            \node[block, below left=1cm and 2cm of check] (continue) {Iteration++};
-            \node[block, below right=1cm and 2cm of check] (done) {Done};
-            
-            \draw[arrow] (start) -- (amf);
-            \draw[arrow] (amf) -- (measure);
-            \draw[arrow] (measure) -- (check);
-            \draw[arrow] (check) -- node[left] {No} (continue);
-            \draw[arrow] (check) -- node[right] {Yes} (done);
-            \draw[arrow] (continue) -- +(-2,0) |- (amf);
-        \end{tikzpicture}
-    \end{figure}
-    
-    \begin{block}{Parameters}
-        \begin{itemize}
-            \item \textbf{Max Window Size}: 5×5
-            \item \textbf{Threshold}: S\&P Ratio $<$ 0.01 (1\%)
-            \item \textbf{Max Iterations}: 10
-        \end{itemize}
-    \end{block}
-\end{frame}
 
 \begin{frame}{Step 1: Adaptive Median - Window Growth}
     \begin{figure}
@@ -543,34 +469,35 @@
     \end{block}
 \end{frame}
 
-\begin{frame}{Step 1: Results}
-    \begin{columns}
-        \column{0.5\textwidth}
-        \begin{block}{Metrics After Step 1}
-            \begin{table}
-                \centering
-                \begin{tabular}{lc}
-                    \toprule
-                    \textbf{Metric} & \textbf{Value} \\
-                    \midrule
-                    MSE & \textit{[Insert Value]} \\
-                    PSNR (dB) & \textit{[Insert Value]} \\
-                    SSIM & \textit{[Insert Value]} \\
-                    S\&P Ratio & \textit{[Insert Value]} \\
-                    Iterations & \textit{[Insert Value]} \\
-                    \bottomrule
-                \end{tabular}
-            \end{table}
-        \end{block}
-        
-        \column{0.5\textwidth}
-        \begin{figure}
+\begin{frame}{Step 1: Results - Images}
+    \begin{figure}
+        \centering
+        \includegraphics[height=0.85\textheight]{outputs/peppers/step1_peppers.png}
+        \caption{After Adaptive Median Filter (Peppers)}
+    \end{figure}
+\end{frame}
+
+\begin{frame}{Step 1: Results - Metrics}
+    \begin{block}{Metrics After Step 1 (All Images)}
+        \begin{table}
             \centering
-            % \includegraphics[width=\textwidth]{step1_result.png}
-            \fbox{\parbox{0.9\textwidth}{\centering\vspace{2cm}Step 1 Result Image\\(Adaptive Median Output)\vspace{2cm}}}
-            \caption{After Adaptive Median Filter}
-        \end{figure}
-    \end{columns}
+            \begin{tabular}{lcccc}
+                \toprule
+                \textbf{Image} & \textbf{MSE} & \textbf{PSNR (dB)} & \textbf{SSIM} & \textbf{S\&P Ratio} \\
+                \midrule
+                Boat & 0.0042 & 23.74 & 0.499 & $<$1\% \\
+                Baboon & 0.0062 & 22.09 & 0.396 & $<$1\% \\
+                Barbara & 0.0051 & 22.92 & 0.464 & $<$1\% \\
+                Peppers & 0.0014 & 28.68 & 0.715 & $<$1\% \\
+                Cameraman & 0.0061 & 22.12 & 0.570 & $<$1\% \\
+                \bottomrule
+            \end{tabular}
+        \end{table}
+    \end{block}
+    
+    \begin{alertblock}{Key Observation}
+        Adaptive Median effectively removes salt \& pepper noise while preserving edges.
+    \end{alertblock}
 \end{frame}
 
 \subsection{Step 2: Non-Local Means}
@@ -632,62 +559,36 @@
     \end{columns}
 \end{frame}
 
-\begin{frame}{Step 2: NLM - Iterative Flow}
+
+\begin{frame}{Step 2: Results - Images}
     \begin{figure}
         \centering
-        \begin{tikzpicture}[
-            node distance=1.2cm,
-            block/.style={rectangle, draw, fill=blue!20, minimum width=3cm, minimum height=0.7cm, font=\small},
-            decision/.style={diamond, draw, fill=yellow!20, aspect=2, inner sep=1pt, font=\small},
-            arrow/.style={->, thick}
-        ]
-            \node[block] (input) {Step 1 Output};
-            \node[block, below=of input] (grid) {Grid Search NLM Parameters};
-            \node[block, below=of grid] (select) {Select Best (min noise)};
-            \node[decision, below=of select] (improve) {Noise improved?};
-            \node[decision, below=of improve] (thresh) {Noise $<$ 0.1?};
-            \node[block, below=of thresh] (output) {Output to Step 3};
-            
-            \draw[arrow] (input) -- (grid);
-            \draw[arrow] (grid) -- (select);
-            \draw[arrow] (select) -- (improve);
-            \draw[arrow] (improve) -- node[right] {Yes} (thresh);
-            \draw[arrow] (improve.west) -- node[above] {No} ++(-2,0) |- (output);
-            \draw[arrow] (thresh) -- node[right] {Yes} (output);
-            \draw[arrow] (thresh.west) -- node[above] {No} ++(-1.5,0) |- (grid);
-        \end{tikzpicture}
+        \includegraphics[height=0.85\textheight]{outputs/peppers/step2_peppers.png}
+        \caption{After Non-Local Means (Peppers)}
     \end{figure}
 \end{frame}
 
-\begin{frame}{Step 2: Results}
-    \begin{columns}
-        \column{0.5\textwidth}
-        \begin{block}{Metrics After Step 2}
-            \begin{table}
-                \centering
-                \begin{tabular}{lc}
-                    \toprule
-                    \textbf{Metric} & \textbf{Value} \\
-                    \midrule
-                    MSE & \textit{[Insert Value]} \\
-                    PSNR (dB) & \textit{[Insert Value]} \\
-                    SSIM & \textit{[Insert Value]} \\
-                    Gaussian $\sigma$ & \textit{[Insert Value]} \\
-                    Iterations & \textit{[Insert Value]} \\
-                    Best Params & \textit{[deg, SW, CW]} \\
-                    \bottomrule
-                \end{tabular}
-            \end{table}
-        \end{block}
-        
-        \column{0.5\textwidth}
-        \begin{figure}
+\begin{frame}{Step 2: Results - Metrics}
+    \begin{block}{Metrics After Step 2 (All Images)}
+        \begin{table}
             \centering
-            % \includegraphics[width=\textwidth]{step2_result.png}
-            \fbox{\parbox{0.9\textwidth}{\centering\vspace{2cm}Step 2 Result Image\\(NLM Output)\vspace{2cm}}}
-            \caption{After Non-Local Means}
-        \end{figure}
-    \end{columns}
+            \begin{tabular}{lcccc}
+                \toprule
+                \textbf{Image} & \textbf{MSE} & \textbf{PSNR (dB)} & \textbf{SSIM} & \textbf{Gaussian $\sigma$} \\
+                \midrule
+                Boat & 0.0037 & 24.27 & 0.532 & $<$0.1 \\
+                Baboon & 0.0060 & 22.20 & 0.421 & $<$0.1 \\
+                Barbara & 0.0048 & 23.18 & 0.510 & $<$0.1 \\
+                Peppers & 0.0010 & 30.02 & 0.860 & $<$0.1 \\
+                Cameraman & 0.0059 & 22.27 & 0.679 & $<$0.1 \\
+                \bottomrule
+            \end{tabular}
+        \end{table}
+    \end{block}
+    
+    \begin{alertblock}{Key Observation}
+        NLM significantly reduces Gaussian noise while preserving structural similarity.
+    \end{alertblock}
 \end{frame}
 
 \subsection{Step 3: Frequency Domain Sharpening}
@@ -779,34 +680,16 @@
     \end{block}
 \end{frame}
 
-\begin{frame}{Step 3: Results}
-    \begin{columns}
-        \column{0.5\textwidth}
-        \begin{block}{Metrics After Step 3}
-            \begin{table}
-                \centering
-                \begin{tabular}{lc}
-                    \toprule
-                    \textbf{Metric} & \textbf{Value} \\
-                    \midrule
-                    Edge Strength & \textit{[Insert Value]} \\
-                    Noise (flat) & \textit{[Insert Value]} \\
-                    Iterations & \textit{[Insert Value]} \\
-                    Best $k$ & \textit{[Insert Value]} \\
-                    Best cutoff & \textit{[Insert Value]} \\
-                    \bottomrule
-                \end{tabular}
-            \end{table}
-        \end{block}
-        
-        \column{0.5\textwidth}
-        \begin{figure}
-            \centering
-            % \includegraphics[width=\textwidth]{step3_result.png}
-            \fbox{\parbox{0.9\textwidth}{\centering\vspace{2cm}Step 3 Result Image\\(Freq Sharpen Output)\vspace{2cm}}}
-            \caption{After Frequency Sharpening}
-        \end{figure}
-    \end{columns}
+\begin{frame}{Step 3: Results - Images}
+    \begin{figure}
+        \centering
+        \includegraphics[height=0.85\textheight]{outputs/peppers/step3_peppers.png}
+        \caption{After Frequency Sharpening (Peppers)}
+    \end{figure}
+    
+    \begin{block}{Note}
+        Step 3 focuses on texture details and edge capturing. The output is processed and enhanced in Step 4.
+    \end{block}
 \end{frame}
 
 \subsection{Step 4: Laplacian Enhancement}
@@ -829,45 +712,6 @@
     \end{equation}
 \end{frame}
 
-\begin{frame}{Step 4: Laplacian Enhancement - Flow}
-    \begin{figure}
-        \centering
-        \begin{tikzpicture}[
-            node distance=1cm and 2cm,
-            block/.style={rectangle, draw, fill=blue!20, minimum width=2.5cm, minimum height=0.7cm, font=\scriptsize},
-            arrow/.style={->, thick}
-        ]
-            % Input nodes
-            \node[block, fill=green!20] (step2) {Step 2 (NLM)};
-            \node[block, fill=orange!20, below=of step2] (step3) {Step 3 (Sharpen)};
-            
-            % Processing
-            \node[block, right=of step3] (laplace) {Laplacian};
-            \node[block, right=of laplace] (wiener) {Wiener Filter};
-            \node[block, right=of wiener] (mean) {Mean Filter (3×3)};
-            
-            % Output
-            \node[block, below=of mean] (add) {Add};
-            \node[block, fill=red!20, right=of add] (output) {Step 4 Output};
-            
-            % Arrows
-            \draw[arrow] (step3) -- (laplace);
-            \draw[arrow] (laplace) -- (wiener);
-            \draw[arrow] (wiener) -- (mean);
-            \draw[arrow] (mean) -- (add);
-            \draw[arrow] (step2) -| (add);
-            \draw[arrow] (add) -- (output);
-        \end{tikzpicture}
-    \end{figure}
-    
-    \begin{block}{Key Components}
-        \begin{itemize}
-            \item \textbf{Laplacian}: Second-order derivative for edge enhancement
-            \item \textbf{Wiener Filter}: Reduces noise using estimated variance from edge\_noise\_metrics
-            \item \textbf{Mean Filter}: 3×3 light smoothing for artifact removal
-        \end{itemize}
-    \end{block}
-\end{frame}
 
 \begin{frame}{Step 4: Laplacian Kernel \& Noise Reduction}
     \begin{columns}
@@ -895,32 +739,35 @@
     \end{columns}
 \end{frame}
 
-\begin{frame}{Step 4: Results}
-    \begin{columns}
-        \column{0.5\textwidth}
-        \begin{block}{Metrics After Step 4}
-            \begin{table}
-                \centering
-                \begin{tabular}{lc}
-                    \toprule
-                    \textbf{Metric} & \textbf{Value} \\
-                    \midrule
-                    MSE & \textit{[Insert Value]} \\
-                    PSNR (dB) & \textit{[Insert Value]} \\
-                    SSIM & \textit{[Insert Value]} \\
-                    \bottomrule
-                \end{tabular}
-            \end{table}
-        \end{block}
-        
-        \column{0.5\textwidth}
-        \begin{figure}
+\begin{frame}{Step 4: Results - Images}
+    \begin{figure}
+        \centering
+        \includegraphics[height=0.85\textheight]{outputs/peppers/step4_peppers.png}
+        \caption{After Laplacian Enhancement (Peppers)}
+    \end{figure}
+\end{frame}
+
+\begin{frame}{Step 4: Results - Metrics}
+    \begin{block}{Metrics After Step 4 (All Images)}
+        \begin{table}
             \centering
-            % \includegraphics[width=\textwidth]{step4_result.png}
-            \fbox{\parbox{0.9\textwidth}{\centering\vspace{2cm}Step 4 Result Image\\(Laplacian Enhancement Output)\vspace{2cm}}}
-            \caption{After Laplacian Enhancement}
-        \end{figure}
-    \end{columns}
+            \begin{tabular}{lccc}
+                \toprule
+                \textbf{Image} & \textbf{MSE} & \textbf{PSNR (dB)} & \textbf{SSIM} \\
+                \midrule
+                Boat & 0.0032 & 25.00 & 0.566 \\
+                Baboon & 0.0055 & 22.59 & 0.481 \\
+                Barbara & 0.0043 & 23.63 & 0.543 \\
+                Peppers & 0.0010 & 30.11 & 0.826 \\
+                Cameraman & 0.0048 & 23.18 & 0.689 \\
+                \bottomrule
+            \end{tabular}
+        \end{table}
+    \end{block}
+    
+    \begin{alertblock}{Key Observation}
+        Laplacian enhancement adds edge details from Step 3 while maintaining denoised quality from Step 2.
+    \end{alertblock}
 \end{frame}
 
 \subsection{Step 5: Gaussian Smoothing}
@@ -969,36 +816,100 @@
     \end{block}
 \end{frame}
 
-\begin{frame}{Step 5: Results}
-    \begin{columns}
-        \column{0.5\textwidth}
-        \begin{block}{Metrics After Step 5}
-            \begin{table}
-                \centering
-                \begin{tabular}{lc}
-                    \toprule
-                    \textbf{Metric} & \textbf{Value} \\
-                    \midrule
-                    MSE & \textit{[Insert Value]} \\
-                    PSNR (dB) & \textit{[Insert Value]} \\
-                    SSIM & \textit{[Insert Value]} \\
-                    Edge Strength & \textit{[Insert Value]} \\
-                    Noise (flat) & \textit{[Insert Value]} \\
-                    Iterations & \textit{[Insert Value]} \\
-                    Best $\sigma$ & \textit{[Insert Value]} \\
-                    \bottomrule
-                \end{tabular}
-            \end{table}
-        \end{block}
-        
-        \column{0.5\textwidth}
-        \begin{figure}
+\begin{frame}{Step 5: Results - Images}
+    \begin{figure}
+        \centering
+        \includegraphics[height=0.85\textheight]{outputs/peppers/step5_peppers.png}
+        \caption{After Gaussian Smoothing (Peppers)}
+    \end{figure}
+\end{frame}
+
+\begin{frame}{Step 5: Results - Metrics}
+    \begin{block}{Metrics After Step 5 (All Images)}
+        \begin{table}
             \centering
-            % \includegraphics[width=\textwidth]{step5_result.png}
-            \fbox{\parbox{0.9\textwidth}{\centering\vspace{2cm}Step 5 Result Image\\(Final Gaussian Output)\vspace{2cm}}}
-            \caption{After Gaussian Smoothing}
-        \end{figure}
-    \end{columns}
+            \begin{tabular}{lccc}
+                \toprule
+                \textbf{Image} & \textbf{MSE} & \textbf{PSNR (dB)} & \textbf{SSIM} \\
+                \midrule
+                Boat & 0.0031 & 25.02 & 0.571 \\
+                Baboon & 0.0055 & 22.60 & 0.489 \\
+                Barbara & 0.0040 & 23.96 & 0.560 \\
+                Peppers & 0.0009 & 30.45 & 0.846 \\
+                Cameraman & 0.0049 & 23.12 & 0.693 \\
+                \bottomrule
+            \end{tabular}
+        \end{table}
+    \end{block}
+    
+    \begin{alertblock}{Key Observation}
+        Gaussian smoothing provides final polish while maintaining edge loss below 10\%.
+    \end{alertblock}
+\end{frame}
+
+\subsection{Step 6: Final NLM Refinement}
+
+\begin{frame}{Step 6: Iterative NLM Again (Final Refinement)}
+    \begin{block}{Goal}
+        Apply NLM one more time to remove any residual Gaussian noise introduced by previous enhancement steps.
+    \end{block}
+    
+    \textbf{Rationale:}
+    \begin{itemize}
+        \item Sharpening and Laplacian enhancement can amplify residual noise
+        \item A final NLM pass provides clean, artifact-free output
+        \item Uses same grid search approach as Step 2
+    \end{itemize}
+    
+    \begin{block}{Parameters (Same as Step 2)}
+        \begin{table}
+            \centering
+            \begin{tabular}{ll}
+                \toprule
+                \textbf{Parameter} & \textbf{Values} \\
+                \midrule
+                Degree of Smoothing & [5, 10, 15, 20, 30] \\
+                Search Window Size & [11, 21] \\
+                Comparison Window Size & [3, 5, 7] \\
+                Target Threshold & 0.08 (stricter) \\
+                \bottomrule
+            \end{tabular}
+        \end{table}
+    \end{block}
+\end{frame}
+
+
+\begin{frame}{Step 6: Results - Images}
+    \begin{figure}
+        \centering
+        \includegraphics[height=0.85\textheight]{outputs/peppers/final_peppers.png}
+        \caption{After Final NLM Refinement (Peppers)}
+    \end{figure}
+\end{frame}
+
+\begin{frame}{Step 6: Results - Metrics}
+    \begin{block}{Metrics After Step 6 (All Images)}
+        \begin{table}
+            \centering
+            \begin{tabular}{lccc}
+                \toprule
+                \textbf{Image} & \textbf{MSE} & \textbf{PSNR (dB)} & \textbf{SSIM} \\
+                \midrule
+                Boat & 0.0031 & 25.06 & 0.576 \\
+                Baboon & 0.0055 & 22.56 & 0.500 \\
+                Barbara & 0.0040 & 23.96 & 0.566 \\
+                Peppers & 0.0009 & 30.67 & 0.860 \\
+                Cameraman & 0.0048 & 23.16 & 0.707 \\
+                \midrule
+                \textbf{Global Avg} & 0.0044 & 24.63 & 0.642 \\
+                \bottomrule
+            \end{tabular}
+        \end{table}
+    \end{block}
+    
+    \begin{alertblock}{Key Observation}
+        Final NLM refinement removes residual noise amplified by enhancement steps.
+    \end{alertblock}
 \end{frame}
 
 %==============================================================================
@@ -1019,8 +930,9 @@
                 Step 1 (Adaptive Median) & $\downarrow\downarrow$ & $\uparrow\uparrow$ & $\uparrow\uparrow$ \\
                 Step 2 (NLM) & $\downarrow$ & $\uparrow$ & $\uparrow$ \\
                 Step 3 (Sharpen) & $\sim$ & $\sim$ & $\uparrow$ \\
-                Step 4 (Edge-Laplacian) & $\sim$ & $\uparrow$ & $\uparrow$ \\
+                Step 4 (Laplacian) & $\sim$ & $\uparrow$ & $\uparrow$ \\
                 Step 5 (Gaussian) & $\downarrow$ & $\uparrow$ & $\uparrow$ \\
+                Step 6 (Final NLM) & $\downarrow$ & $\uparrow$ & $\uparrow$ \\
                 \bottomrule
             \end{tabular}
         \end{table}
@@ -1029,68 +941,12 @@
     \begin{itemize}
         \item \textbf{Biggest improvements}: Steps 1 \& 2 (noise removal)
         \item \textbf{Fine-tuning}: Steps 3, 4, 5 (edge/quality enhancement)
+        \item \textbf{Final polish}: Step 6 (remove amplified noise)
     \end{itemize}
 \end{frame}
 
-\begin{frame}{Overall Results Table}
-    \begin{block}{Complete Pipeline Metrics Summary}
-        \begin{table}
-            \centering
-            \begin{tabular}{lccc}
-                \toprule
-                \textbf{Step} & \textbf{MSE} & \textbf{PSNR (dB)} & \textbf{SSIM} \\
-                \midrule
-                Step 0 (Degraded) & \textit{[Value]} & \textit{[Value]} & \textit{[Value]} \\
-                Step 1 (Adaptive Median) & \textit{[Value]} & \textit{[Value]} & \textit{[Value]} \\
-                Step 2 (NLM) & \textit{[Value]} & \textit{[Value]} & \textit{[Value]} \\
-                Step 4 (Laplacian) & \textit{[Value]} & \textit{[Value]} & \textit{[Value]} \\
-                Step 5 (Final) & \textit{[Value]} & \textit{[Value]} & \textit{[Value]} \\
-                \midrule
-                \textbf{Improvement} & \textit{[\%]} & \textit{[+dB]} & \textit{[+\%]} \\
-                \bottomrule
-            \end{tabular}
-        \end{table}
-    \end{block}
-    
-    \begin{alertblock}{Global Average (All Images)}
-        \textbf{MSE}: \textit{[Value]} \quad \textbf{PSNR}: \textit{[Value]} dB \quad \textbf{SSIM}: \textit{[Value]}
-    \end{alertblock}
-\end{frame}
 
-\begin{frame}{Final Restored Image}
-    \begin{figure}
-        \centering
-        \begin{minipage}{0.45\textwidth}
-            \centering
-            % \includegraphics[width=\textwidth]{original.png}
-            \fbox{\parbox{0.9\textwidth}{\centering\vspace{3cm}Original Image\vspace{3cm}}}
-            \caption{Original}
-        \end{minipage}
-        \hfill
-        \begin{minipage}{0.45\textwidth}
-            \centering
-            % \includegraphics[width=\textwidth]{degraded.png}
-            \fbox{\parbox{0.9\textwidth}{\centering\vspace{3cm}Degraded Image\vspace{3cm}}}
-            \caption{Degraded}
-        \end{minipage}
-    \end{figure}
-\end{frame}
 
-\begin{frame}{Final Restored Image (cont.)}
-    \begin{figure}
-        \centering
-        \begin{minipage}{0.6\textwidth}
-            \centering
-            % \includegraphics[width=\textwidth]{final_restored.png}
-            \fbox{\parbox{0.95\textwidth}{\centering\vspace{4cm}\textbf{Final Restored Image}\\(Pipeline Output)\vspace{4cm}}}
-        \end{minipage}
-    \end{figure}
-    
-    \begin{block}{Final Metrics}
-        \centering
-        \textbf{MSE}: \textit{[Value]} \quad \textbf{PSNR}: \textit{[Value]} dB \quad \textbf{SSIM}: \textit{[Value]}
-    \end{block}
-\end{frame}
 
 \begin{frame}{Visual Comparison}
     \begin{block}{Expected Visual Improvements}
@@ -1124,21 +980,6 @@
     \end{block}
 \end{frame}
 
-\begin{frame}{Edge Quality Assessment}
-    \begin{block}{Edge Strength Monitoring}
-        Edge\_noise\_metrics tracks edge quality at each stage:
-        \begin{itemize}
-            \item \textbf{Degraded}: High noise in flat regions, false edge detection
-            \item \textbf{After NLM}: Cleaner but potentially weaker edges
-            \item \textbf{After Sharpen}: Restored edge strength with controlled noise
-            \item \textbf{Final}: Balanced edge preservation with minimal artifacts
-        \end{itemize}
-    \end{block}
-    
-    \begin{alertblock}{Key Observation}
-        The pipeline successfully removes noise while maintaining or improving edge strength - measured quantitatively throughout the process.
-    \end{alertblock}
-\end{frame}
 
 %==============================================================================
 % SECTION 6: CONCLUSION
@@ -1166,22 +1007,188 @@
     \end{block}
 \end{frame}
 
-\begin{frame}{Future Work}
-    \begin{itemize}
-        \item \textbf{Deep Learning Integration}: CNN-based denoising (DnCNN, etc.)
-        \item \textbf{Adaptive Thresholds}: Learning optimal thresholds from data
-        \item \textbf{Real-time Processing}: GPU acceleration
-        \item \textbf{Color Image Support}: Extend to RGB images
-        \item \textbf{Blind Deconvolution}: Handle blur in addition to noise
-    \end{itemize}
+
+
+%==============================================================================
+% SECTION 7: IMAGE COMPARISONS
+%==============================================================================
+\section{Image Comparisons}
+
+%--- BOAT ---
+\begin{frame}{Boat - Original vs Degraded vs Restored}
+    \begin{figure}
+        \centering
+        \begin{minipage}{0.3\textwidth}
+            \centering
+            \includegraphics[width=\textwidth]{project_images/clean/original_boat.png}
+            %\fbox{\parbox{0.9\textwidth}{\centering\vspace{2.5cm}\textbf{Original}\vspace{2.5cm}}}
+        \end{minipage}
+        \hfill
+        \begin{minipage}{0.3\textwidth}
+            \centering
+            \includegraphics[width=\textwidth]{project_images/degraded/degraded_boat.png}
+            %\fbox{\parbox{0.9\textwidth}{\centering\vspace{2.5cm}\textbf{Degraded}\vspace{2.5cm}}}
+        \end{minipage}
+        \hfill
+        \begin{minipage}{0.3\textwidth}
+            \centering
+            \includegraphics[width=\textwidth]{outputs/boat/final_boat.png}
+            %\fbox{\parbox{0.9\textwidth}{\centering\vspace{2.5cm}\textbf{Restored}\vspace{2.5cm}}}
+        \end{minipage}
+    \end{figure}
     
-    \vspace{0.5cm}
-    \begin{block}{Acknowledgments}
-        \begin{itemize}
-            \item SA-DCT toolbox for advanced filtering options
-            \item Standard test images from image processing community
-        \end{itemize}
+    \begin{block}{Boat - Metrics}
+        \centering
+        \textbf{MSE}: 0.0031 \quad \textbf{PSNR}: 25.06 dB \quad \textbf{SSIM}: 0.576
     \end{block}
+\end{frame}
+
+%--- BABOON ---
+\begin{frame}{Baboon - Original vs Degraded vs Restored}
+    \begin{figure}
+        \centering
+        \begin{minipage}{0.3\textwidth}
+            \centering
+            \includegraphics[width=\textwidth]{project_images/clean/original_baboon.png}
+            %\fbox{\parbox{0.9\textwidth}{\centering\vspace{2.5cm}\textbf{Original}\vspace{2.5cm}}}
+        \end{minipage}
+        \hfill
+        \begin{minipage}{0.3\textwidth}
+            \centering
+            \includegraphics[width=\textwidth]{project_images/degraded/degraded_baboon.png}
+            %\fbox{\parbox{0.9\textwidth}{\centering\vspace{2.5cm}\textbf{Degraded}\vspace{2.5cm}}}
+        \end{minipage}
+        \hfill
+        \begin{minipage}{0.3\textwidth}
+            \centering
+            \includegraphics[width=\textwidth]{outputs/baboon/final_baboon.png}
+            %\fbox{\parbox{0.9\textwidth}{\centering\vspace{2.5cm}\textbf{Restored}\vspace{2.5cm}}}
+        \end{minipage}
+    \end{figure}
+    
+    \begin{block}{Baboon - Metrics}
+        \centering
+        \textbf{MSE}: 0.0055 \quad \textbf{PSNR}: 22.56 dB \quad \textbf{SSIM}: 0.500
+    \end{block}
+\end{frame}
+
+%--- BARBARA ---
+\begin{frame}{Barbara - Original vs Degraded vs Restored}
+    \begin{figure}
+        \centering
+        \begin{minipage}{0.3\textwidth}
+            \centering
+            \includegraphics[width=\textwidth]{project_images/clean/original_barbara.png}
+            %\fbox{\parbox{0.9\textwidth}{\centering\vspace{2.5cm}\textbf{Original}\vspace{2.5cm}}}
+        \end{minipage}
+        \hfill
+        \begin{minipage}{0.3\textwidth}
+            \centering
+            \includegraphics[width=\textwidth]{project_images/degraded/degraded_barbara.png}
+            %\fbox{\parbox{0.9\textwidth}{\centering\vspace{2.5cm}\textbf{Degraded}\vspace{2.5cm}}}
+        \end{minipage}
+        \hfill
+        \begin{minipage}{0.3\textwidth}
+            \centering
+            \includegraphics[width=\textwidth]{outputs/barbara/final_barbara.png}
+            %\fbox{\parbox{0.9\textwidth}{\centering\vspace{2.5cm}\textbf{Restored}\vspace{2.5cm}}}
+        \end{minipage}
+    \end{figure}
+    
+    \begin{block}{Barbara - Metrics}
+        \centering
+        \textbf{MSE}: 0.0040 \quad \textbf{PSNR}: 23.96 dB \quad \textbf{SSIM}: 0.566
+    \end{block}
+\end{frame}
+
+%--- PEPPERS ---
+\begin{frame}{Peppers - Original vs Degraded vs Restored}
+    \begin{figure}
+        \centering
+        \begin{minipage}{0.3\textwidth}
+            \centering
+            \includegraphics[width=\textwidth]{project_images/clean/original_peppers.png}
+            %\fbox{\parbox{0.9\textwidth}{\centering\vspace{2.5cm}\textbf{Original}\vspace{2.5cm}}}
+        \end{minipage}
+        \hfill
+        \begin{minipage}{0.3\textwidth}
+            \centering
+            \includegraphics[width=\textwidth]{project_images/degraded/degraded_peppers.png}
+            %\fbox{\parbox{0.9\textwidth}{\centering\vspace{2.5cm}\textbf{Degraded}\vspace{2.5cm}}}
+        \end{minipage}
+        \hfill
+        \begin{minipage}{0.3\textwidth}
+            \centering
+            \includegraphics[width=\textwidth]{outputs/peppers/final_peppers.png}
+            %\fbox{\parbox{0.9\textwidth}{\centering\vspace{2.5cm}\textbf{Restored}\vspace{2.5cm}}}
+        \end{minipage}
+    \end{figure}
+    
+    \begin{block}{Peppers - Metrics}
+        \centering
+        \textbf{MSE}: 0.0009 \quad \textbf{PSNR}: 30.67 dB \quad \textbf{SSIM}: 0.860
+    \end{block}
+\end{frame}
+
+%--- CAMERAMAN ---
+\begin{frame}{Cameraman - Original vs Degraded vs Restored}
+    \begin{figure}
+        \centering
+        \begin{minipage}{0.3\textwidth}
+            \centering
+            \includegraphics[width=\textwidth]{project_images/clean/original_cameraman.png}
+            %\fbox{\parbox{0.9\textwidth}{\centering\vspace{2.5cm}\textbf{Original}\vspace{2.5cm}}}
+        \end{minipage}
+        \hfill
+        \begin{minipage}{0.3\textwidth}
+            \centering
+            \includegraphics[width=\textwidth]{project_images/degraded/degraded_cameraman.png}
+            %\fbox{\parbox{0.9\textwidth}{\centering\vspace{2.5cm}\textbf{Degraded}\vspace{2.5cm}}}
+        \end{minipage}
+        \hfill
+        \begin{minipage}{0.3\textwidth}
+            \centering
+            \includegraphics[width=\textwidth]{outputs/cameraman/final_cameraman.png}
+            %\fbox{\parbox{0.9\textwidth}{\centering\vspace{2.5cm}\textbf{Restored}\vspace{2.5cm}}}
+        \end{minipage}
+    \end{figure}
+    
+    \begin{block}{Cameraman - Metrics}
+        \centering
+        \textbf{MSE}: 0.0048 \quad \textbf{PSNR}: 23.16 dB \quad \textbf{SSIM}: 0.707
+    \end{block}
+\end{frame}
+
+%==============================================================================
+% GLOBAL METRICS SUMMARY
+%==============================================================================
+\begin{frame}{Global Results Summary - All Images}
+    \begin{block}{Per-Image Final Metrics (After Step 6)}
+        \begin{table}
+            \centering
+            \begin{tabular}{lccc}
+                \toprule
+                \textbf{Image} & \textbf{MSE} & \textbf{PSNR (dB)} & \textbf{SSIM} \\
+                \midrule
+                Boat & 0.0031 & 25.06 & 0.576 \\
+                Baboon & 0.0055 & 22.56 & 0.500 \\
+                Barbara & 0.0040 & 23.96 & 0.566 \\
+                Peppers & 0.0009 & 30.67 & 0.860 \\
+                Cameraman & 0.0048 & 23.16 & 0.707 \\
+                \midrule
+                \textbf{Global Average} & 0.0044 & 24.63 & 0.642 \\
+                \bottomrule
+            \end{tabular}
+        \end{table}
+    \end{block}
+    
+    \begin{alertblock}{Key Observations}
+        \begin{itemize}
+            \item All images show significant improvement over degraded versions
+            \item SSIM values indicate good structural preservation
+            \item Pipeline adapts effectively to different image characteristics
+        \end{itemize}
+    \end{alertblock}
 \end{frame}
 
 \begin{frame}
