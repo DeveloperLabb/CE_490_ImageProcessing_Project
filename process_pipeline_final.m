@@ -60,8 +60,11 @@ for idx = 1:length(image_names)
     non_sp_mask       = ~(D == 0 | D == 255);
     noise_diff        = D(non_sp_mask) - O(non_sp_mask);
     gaussian_std_true = std(noise_diff);
+    
+    Io = im2double(I_original);
+    Ir = im2double(I_degraded);
 
-    MSE0  = mean((O(:) - D(:)).^2);
+    MSE0   = immse(Ir, Io);
     PSNR0 = 10*log10(255^2 / (MSE0 + 1e-12));
     SSIM0 = ssim(I_degraded, I_original);
 
@@ -311,16 +314,22 @@ for idx = 1:length(image_names)
 
     % Save STEP 3 output
     save_step_image(OUT_DIR, name, 4, "step3_sharpen", I_step3);
+    
 
     %% ============================================================
     % STEP 4 — EDGE-MASKED LAPLACIAN ENHANCEMENT
     %% ============================================================
     fprintf("\n--- STEP 4: Edge-Masked Laplacian Enhancement ---\n");
-
+    
     laplacian_kernel = [0 -1 0; -1 4 -1; 0 -1 0];
     I_step3_double = im2double(I_step3);
     laplace_output = imfilter(I_step3_double, laplacian_kernel, 'symmetric');
 
+    laplace_vis = mat2gray(laplace_output);   % scales min..max -> 0..1
+    laplace_vis_u8 = im2uint8(laplace_vis);
+    save_step_image(OUT_DIR, name, 45, "laplace_output", laplace_vis_u8);
+
+    
     enhanced_edges = double(laplace_output);
 
     [~, noise_sigma] = edge_noise_metrics(I_step3_double);
