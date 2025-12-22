@@ -65,8 +65,8 @@ for idx = 1:length(image_names)
     Ir = im2double(I_degraded);
 
     MSE0   = immse(Ir, Io);
-    PSNR0 = 10*log10(255^2 / (MSE0 + 1e-12));
-    SSIM0 = ssim(I_degraded, I_original);
+    PSNR0 = psnr(Ir, Io, 1);                 
+    SSIM0 = ssim(Ir, Io, "DynamicRange", 1);   
 
     fprintf("\n--- STEP 0 (Original vs Degraded Metrics) ---\n");
     fprintf("Salt-Pepper Ratio:\n");
