@@ -62,13 +62,48 @@ for idx = 1:length(image_names)
 
 
     %% ============================================================
-    % STEP 1 — ADAPTIVE MEDIAN FILTER
+    % STEP 1A — GRID SEARCH OPTIMIZED ALPHA-TRIMMED MEAN FILTER
     %% ============================================================
-    I_step1 = adaptive_median_filtering(I_degraded, 5);
-    Results1 = compare_original_restored(I_original, I_step1);
+    fprintf("\n---- STEP 1A: Grid Search Optimized Alpha-Trimmed Mean ----\n");
 
-    show_compare_images(I_original, I_degraded, I_step1, ...
-        "Step 1: Adaptive Median Filter");
+    alpha_list  = [0, 2, 4, 6, 8, 10, 12];   % total number of trimmed samples
+    kernel_list = [3, 5, 7];
+
+    best_score  = -inf;
+    best_alpha  = 0;
+    best_kernel = 3;
+    best_img    = I_degraded;
+
+    for alpha = alpha_list
+        for K = kernel_list
+
+            candidate = alpha_trimmed_mean_filter(I_degraded, K, alpha);
+            tmp = compare_original_restored(I_original, candidate);
+
+            % Combined metric: SSIM + PSNR/50
+            score = tmp.SSIM + (tmp.PSNR / 50);
+
+            fprintf("Alpha = %2d, Kernel = %d ---> Score = %.4f\n", alpha, K, score);
+
+            if score > best_score
+                best_score  = score;
+                best_alpha  = alpha;
+                best_kernel = K;
+                best_img    = candidate;
+            end
+        end
+    end
+
+    fprintf("\n*** OPTIMAL ALPHA-TRIMMED PARAMETERS FOUND ***\n");
+    fprintf("Best Alpha   = %d\n", best_alpha);
+    fprintf("Best Kernel  = %d\n", best_kernel);
+    fprintf("Best Score   = %.4f\n\n", best_score);
+
+    I_step1A  = best_img;
+    Results1A = compare_original_restored(I_original, I_step1A);
+
+    show_compare_images(I_original, I_degraded, I_step1A, ...
+        sprintf("Step 1A: Alpha-Trimmed Mean (Alpha=%d, K=%d)", best_alpha, best_kernel));
 
 
 
@@ -86,7 +121,8 @@ for idx = 1:length(image_names)
     for sc = sigmaColor_list
         for ss = sigmaSpatial_list
 
-            candidate = imbilatfilt(I_step1, sc, ss);
+            % Bilateral is applied on the output of STEP 1A (alpha-trimmed mean)
+            candidate = imbilatfilt(I_step1A, sc, ss);
             tmp = compare_original_restored(I_original, candidate);
 
             % Combined metric: SSIM + PSNR/50
@@ -107,11 +143,11 @@ for idx = 1:length(image_names)
     fprintf("sigmaSpatial = %d\n", best_params(2));
     fprintf("BEST SCORE   = %.4f\n\n", best_score);
 
-    I_step2 = imbilatfilt(I_step1, best_params(1), best_params(2));
-
+    % Final bilateral using optimized parameters on STEP 1A output
+    I_step2 = imbilatfilt(I_step1A, best_params(1), best_params(2));
     Results2 = compare_original_restored(I_original, I_step2);
 
-    show_compare_images(I_original, I_step1, I_step2, ...
+    show_compare_images(I_original, I_step1A, I_step2, ...
         sprintf("Step 2: Optimized Bilateral (C=%d, S=%d)", ...
             best_params(1), best_params(2)));
 
@@ -177,10 +213,11 @@ for idx = 1:length(image_names)
     
     pred_len = length(F(:)) - length(known_mag);
     
+    % NOTE: Here we just generate a shaped sequence; you might refine this
     predicted_mag = filter(-a(2:end), 1, zeros(pred_len,1));
     
     % Normalize predicted magnitude to LF dynamic range
-    predicted_mag = predicted_mag / max(predicted_mag(:)+1e-12) * max(known_mag);
+    predicted_mag = predicted_mag / (max(predicted_mag(:)) + 1e-12) * max(known_mag);
     
     HF_indices = find(~low_mask);
     F_new      = Fshift;
@@ -203,13 +240,13 @@ for idx = 1:length(image_names)
 
     fprintf("\n---- STEP 4: Laplacian + Soft Sobel Edge-Masked Sharpen ----\n");
 
-    % Çalışma görüntüsü: ASE çıktısı
+    % Base image for sharpening: ASE output
     I_base = I_ase;
 
-    % Parametreler (biraz daha güvenli ama görünür keskinlik)
+    % Parameters (visible but safe sharpening)
     lambda       = 0.35;   % sharpen strength
     sobel_weight = 0.5;    % soft Sobel contribution
-    boost_scale  = 60;     % 100 çok agresifti, 50–70 arası iyi
+    boost_scale  = 60;     % 100 was too aggressive, 50–70 is safer
 
     %% 4A — Raw Laplacian
     I_lap = double(laplacian_filter(I_base, "lap8"));
@@ -228,15 +265,15 @@ for idx = 1:length(image_names)
     %% 4C — Soft Sobel
     [Gx, Gy] = imgradientxy(I_base);
     sobel_mag = abs(Gx) + abs(Gy);
-    sobel_mag = sobel_mag / max(sobel_mag(:) + 1e-8);
+    sobel_mag = sobel_mag / (max(sobel_mag(:)) + 1e-8);
     sobel_soft = sobel_weight * sobel_mag;
 
     show_compare_images(I_original, I_base, uint8(sobel_soft*255), ...
         "Step 4C: Soft Sobel");
 
-    %% 4D — Edge Mask (Laplacian + Sobel birleştirme)
+    %% 4D — Edge Mask (Laplacian + Sobel fusion)
     edge_strength = abs(I_lap_thresh);
-    edge_strength = edge_strength / max(edge_strength(:) + 1e-8);
+    edge_strength = edge_strength / (max(edge_strength(:)) + 1e-8);
 
     edge_mask = max(edge_strength, sobel_soft);
     edge_mask = imgaussfilt(edge_mask, 1.2);  % smooth mask
@@ -262,14 +299,14 @@ for idx = 1:length(image_names)
     % SUMMARY FOR THIS IMAGE
     %% ============================================================
     Steps = ["STEP0 Degraded", ...
-             "STEP1 Adaptive Median", ...
+             "STEP1A Alpha-Trimmed Mean", ...
              "STEP2 Bilateral (Optimized)", ...
              "STEP3 ASE Deblur", ...
              "STEP4 ASE + Edge-Masked Sharpen"];
 
-    MSE_values  = [MSE0,  Results1.MSE,  Results2.MSE,  Results3.MSE, Results4.MSE];
-    PSNR_values = [PSNR0, Results1.PSNR, Results2.PSNR, Results3.PSNR, Results4.PSNR];
-    SSIM_values = [SSIM0, Results1.SSIM, Results2.SSIM, Results3.SSIM, Results4.SSIM];
+    MSE_values  = [MSE0,  Results1A.MSE,  Results2.MSE,  Results3.MSE, Results4.MSE];
+    PSNR_values = [PSNR0, Results1A.PSNR, Results2.PSNR, Results3.PSNR, Results4.PSNR];
+    SSIM_values = [SSIM0, Results1A.SSIM, Results2.SSIM, Results3.SSIM, Results4.SSIM];
 
     SummaryTable = table(Steps', MSE_values', PSNR_values', SSIM_values', ...
         'VariableNames', {'Step','MSE','PSNR','SSIM'});
@@ -297,3 +334,6 @@ fprintf("Global Average MSE   = %.4f\n", mean(All_MSE));
 fprintf("Global Average PSNR  = %.4f dB\n", mean(All_PSNR));
 fprintf("Global Average SSIM  = %.4f\n", mean(All_SSIM));
 fprintf("===============================================================\n\n");
+
+
+             
