@@ -61,12 +61,12 @@ for idx = 1:length(image_names)
     noise_diff        = D(non_sp_mask) - O(non_sp_mask);
     gaussian_std_true = std(noise_diff);
     
-    Io = im2double(I_original);
-    Ir = im2double(I_degraded);
+    Io = double(I_original) / 255;
+    Ir = double(I_degraded) / 255;
 
-    MSE0   = immse(Ir, Io);
-    PSNR0 = psnr(Ir, Io, 1);                 
-    SSIM0 = ssim(Ir, Io, "DynamicRange", 1);   
+    MSE0  = immse(Ir, Io);
+    PSNR0 = psnr(Ir, Io, 1);
+    SSIM0 = ssim(Ir, Io, "DynamicRange", 1);
 
     fprintf("\n--- STEP 0 (Original vs Degraded Metrics) ---\n");
     fprintf("Salt-Pepper Ratio:\n");
@@ -121,78 +121,12 @@ for idx = 1:length(image_names)
     %% ============================================================
     % STEP 2 — ITERATIVE NLM (Until Gaussian noise threshold)
     %% ============================================================
-    gaussian_threshold  = 0.1;
-    max_nlm_iterations  = 5;
-
-    I_step2 = I_step1;
-    gaussian_current = estimate_gaussian_noise(I_step2);
-    nlm_iteration = 0;
-
-    fprintf("\n--- STEP 2: Iterative NLM (Gaussian Noise Reduction) ---\n");
-    fprintf("Target Gaussian Threshold: %.2f\n", gaussian_threshold);
-    fprintf("Initial Gaussian Noise (Est.): %.3f\n\n", gaussian_current);
-
     degree_list = [5 10 15 20 30];
     sw_list     = [11 21];
     cw_list     = [3 5 7];
 
-    while gaussian_current > gaussian_threshold && nlm_iteration < max_nlm_iterations
-        nlm_iteration = nlm_iteration + 1;
-
-        fprintf("  [NLM Iteration %d] - Current Noise: %.3f\n", nlm_iteration, gaussian_current);
-        fprintf("  Grid Search başlatılıyor...\n");
-
-        best_noise     = inf;
-        best_desc      = "";
-        best_candidate = I_step2;
-
-        for deg = degree_list
-            for sw = sw_list
-                for cw = cw_list
-                    if cw > sw, continue; end
-
-                    candidate = imnlmfilt(I_step2, ...
-                        "DegreeOfSmoothing", deg, ...
-                        "SearchWindowSize", sw, ...
-                        "ComparisonWindowSize", cw);
-
-                    noise_est = estimate_gaussian_noise(candidate);
-
-                    fprintf("    deg=%d SW=%d CW=%d -> Noise=%.3f\n", deg, sw, cw, noise_est);
-
-                    if noise_est < best_noise
-                        best_noise     = noise_est;
-                        best_desc      = sprintf("deg=%d,SW=%d,CW=%d", deg, sw, cw);
-                        best_candidate = candidate;
-                    end
-                end
-            end
-        end
-
-        if best_noise >= gaussian_current
-            fprintf("\n    >>> No improvement found (Best: %.3f >= Current: %.3f)\n", ...
-                best_noise, gaussian_current);
-            fprintf("    >>> Early stopping - NLM iteration terminated.\n\n");
-            break;
-        end
-
-        fprintf("\n    >>> Best: %s | Noise: %.3f -> %.3f (Improvement: %.3f)\n\n", ...
-            best_desc, gaussian_current, best_noise, gaussian_current - best_noise);
-
-        I_step2 = best_candidate;
-        gaussian_current = best_noise;
-    end
-
-    if gaussian_current <= gaussian_threshold
-        fprintf("  >> Gaussian threshold (%.2f) reached after %d iterations!\n", ...
-            gaussian_threshold, nlm_iteration);
-    elseif nlm_iteration >= max_nlm_iterations
-        fprintf("  >> Max NLM iterations (%d) reached. Final Gaussian: %.3f\n", ...
-            max_nlm_iterations, gaussian_current);
-    else
-        fprintf("  >> Early stopped at iteration %d. Final Gaussian: %.3f\n", ...
-            nlm_iteration, gaussian_current);
-    end
+    [I_step2, gaussian_current, nlm_iteration] = iterative_nlm_filter(...
+        I_step1, 0.1, 5, degree_list, sw_list, cw_list, "STEP 2");
 
     Results2 = compare_original_restored(I_original, I_step2);
 
@@ -210,104 +144,11 @@ for idx = 1:length(image_names)
     %% ============================================================
     % STEP 3 — ITERATIVE FREQ SHARPEN (Edge/Noise Ratio with Early Stopping)
     %% ============================================================
-    fprintf("\n--- STEP 3: Iterative Freq Sharpen (Edge > Noise Gain) ---\n");
-
-    max_sharpen_iterations = 5;
-    I_step3 = I_step2;
-
-    [edge_current, noise_current] = edge_noise_metrics(I_step3);
-    sharpen_iteration = 0;
-
-    fprintf("Initial Edge: %.6f | Noise: %.6f\n", edge_current, noise_current);
-    fprintf("Rule: Continue while edge_gain > noise_gain\n\n");
-
     k_list      = [0.3 0.5 0.7 0.9 1.1 1.3 1.5 1.8 2.0];
     cutoff_list = [0.03 0.05 0.07 0.09 0.11 0.13];
 
-    while sharpen_iteration < max_sharpen_iterations
-        sharpen_iteration = sharpen_iteration + 1;
-
-        fprintf("  [Sharpen Iteration %d] - Edge: %.6f | Noise: %.6f\n", ...
-            sharpen_iteration, edge_current, noise_current);
-        fprintf("  Grid Search başlatılıyor...\n");
-
-        [edge0, noise0] = edge_noise_metrics(I_step3);
-
-        best_ratio      = inf;
-        best_edge_gain  = 0;
-        best_noise_gain = 0;
-        best_desc       = "";
-        best_candidate  = I_step3;
-
-        for k = k_list
-            for c = cutoff_list
-                candidate = freq_highboost_gauss(I_step3, k, c);
-
-                [edge1, noise1] = edge_noise_metrics(candidate);
-
-                edge_norm  = edge1  / (edge0  + 1e-12);
-                noise_norm = noise1 / (noise0 + 1e-12);
-
-                edge_gain  = edge_norm  - 1.0;
-                noise_gain = noise_norm - 1.0;
-
-                if edge_gain > 0
-                    ratio = noise_gain / edge_gain;
-                else
-                    ratio = inf;
-                end
-
-                fprintf("    k=%.2f c=%.3f | edge_gain=%.4f noise_gain=%.4f | ratio=%.4f\n", ...
-                    k, c, edge_gain, noise_gain, ratio);
-
-                if ratio < best_ratio
-                    best_ratio      = ratio;
-                    best_edge_gain  = edge_gain;
-                    best_noise_gain = noise_gain;
-                    best_desc       = sprintf("k=%.2f,c=%.3f", k, c);
-                    best_candidate  = candidate;
-                end
-            end
-        end
-
-        ratio_threshold = 3.0;
-        if best_ratio >= ratio_threshold
-            fprintf("\n    >>> Stop: best ratio = %.4f >= %.1f threshold\n", ...
-                best_ratio, ratio_threshold);
-            fprintf("    >>> Noise increasing too fast. Early stopping.\n\n");
-            break;
-        end
-
-        [edge_new, noise_new] = edge_noise_metrics(best_candidate);
-
-        noise_threshold = 0.03;
-        if noise_new > noise_threshold
-            fprintf("\n    >>> Stop: noise = %.6f > %.4f threshold\n", ...
-                noise_new, noise_threshold);
-            fprintf("    >>> Noise too high. Not applying this iteration.\n\n");
-            break;
-        end
-
-        fprintf("\n    >>> Best: %s\n", best_desc);
-        fprintf("    >>> Edge gain: %.4f | Noise gain: %.4f | Ratio: %.4f\n", ...
-            best_edge_gain, best_noise_gain, best_ratio);
-        fprintf("    >>> Edge: %.6f -> %.6f | Noise: %.6f -> %.6f\n\n", ...
-            edge_current, edge_new, noise_current, noise_new);
-
-        I_step3 = best_candidate;
-        edge_current = edge_new;
-        noise_current = noise_new;
-    end
-
-    if sharpen_iteration >= max_sharpen_iterations
-        fprintf("  >> Max sharpen iterations (%d) reached.\n", max_sharpen_iterations);
-    else
-        fprintf("  >> Early stopped at iteration %d.\n", sharpen_iteration);
-    end
-
-    fprintf("\n*** STEP 3 FINAL ***\n");
-    fprintf("Total Iterations: %d\n", sharpen_iteration);
-    fprintf("Final Edge: %.6f | Noise: %.6f\n\n", edge_current, noise_current);
+    [I_step3, edge_current, noise_current, sharpen_iteration] = iterative_freq_sharpen(...
+        I_step2, 5, k_list, cutoff_list, 3.0, 0.03);
 
     show_compare_images(I_original, I_step2, I_step3, ...
         sprintf("Step 3: Iterative Sharpen (%d iters)", sharpen_iteration));
@@ -322,7 +163,7 @@ for idx = 1:length(image_names)
     fprintf("\n--- STEP 4: Edge-Masked Laplacian Enhancement ---\n");
     
     laplacian_kernel = [0 -1 0; -1 4 -1; 0 -1 0];
-    I_step3_double = im2double(I_step3);
+    I_step3_double = double(I_step3) / 255;
     laplace_output = imfilter(I_step3_double, laplacian_kernel, 'symmetric');
 
     laplace_vis = mat2gray(laplace_output);   % scales min..max -> 0..1
@@ -340,7 +181,7 @@ for idx = 1:length(image_names)
     meanKernel = fspecial('average', [3 3]);
     lap_smooth = imfilter(lap_smooth_w, meanKernel, 'symmetric');
 
-    I_step2_double = im2double(I_step2);
+    I_step2_double = double(I_step2) / 255;
     I_final = I_step2_double + lap_smooth;
 
     I_final = max(0, min(1, I_final));
@@ -368,92 +209,11 @@ for idx = 1:length(image_names)
     %% ============================================================
     % STEP 5 — ITERATIVE GAUSSIAN SMOOTHING (Edge Preserve + Noise Reduce)
     %% ============================================================
-    fprintf("\n--- STEP 5: Iterative Gaussian Smoothing ---\n");
-
-    max_step5_iterations = 5;
-    I_step5 = I_final;
-
-    [edge_initial, ~] = edge_noise_metrics(I_step5);
-    [edge_current, noise_current] = edge_noise_metrics(I_step5);
-    step5_iteration = 0;
-    total_edge_loss = 0;
-
-    fprintf("Initial Edge: %.6f | Noise: %.6f\n", edge_initial, noise_current);
-    fprintf("Rule: noise_red/edge_loss max, stop if total edge loss > 5%%\n\n");
-
     sigma_list = [0.01 0.05 0.1 0.2 0.3 0.4 0.5 0.6 0.8 1.0];
     fs_list    = [3 5 7 9 11 13];
 
-    while step5_iteration < max_step5_iterations
-        step5_iteration = step5_iteration + 1;
-
-        fprintf("  [Iteration %d] - Edge: %.6f | Noise: %.6f | Total Edge Loss: %.2f%%\n", ...
-            step5_iteration, edge_current, noise_current, total_edge_loss*100);
-        fprintf("  Grid Search başlatılıyor...\n");
-
-        [edge0, noise0] = edge_noise_metrics(I_step5);
-
-        best_ratio = -inf;
-        best_noise = inf;
-        best_desc  = "";
-        best_candidate = I_step5;
-        found_valid = false;
-
-        for sigma = sigma_list
-            for fs = fs_list
-                candidate = imgaussfilt(I_step5, sigma, ...
-                    "FilterSize", fs, ...
-                    "Padding", "symmetric");
-
-                [edge1, noise1] = edge_noise_metrics(candidate);
-
-                edge_loss       = (edge0 - edge1) / (edge0 + 1e-12);
-                noise_reduction = (noise0 - noise1) / (noise0 + 1e-12);
-
-                potential_total_loss = (edge_initial - edge1) / (edge_initial + 1e-12);
-
-                if edge_loss > 0.001
-                    ratio = noise_reduction / edge_loss;
-                else
-                    ratio = noise_reduction * 100;
-                end
-
-                fprintf("    sigma=%.2f FS=%d | edge_loss=%.4f noise_red=%.4f ratio=%.2f total=%.2f%%\n", ...
-                    sigma, fs, edge_loss, noise_reduction, ratio, potential_total_loss*100);
-
-                if potential_total_loss < 0.1 && noise_reduction > 0 && ratio > best_ratio
-                    best_ratio = ratio;
-                    best_noise = noise1;
-                    best_desc  = sprintf("sigma=%.2f,FS=%d", sigma, fs);
-                    best_candidate = candidate;
-                    found_valid = true;
-                end
-            end
-        end
-
-        if ~found_valid || best_noise >= noise_current
-            fprintf("\n    >>> Stop: no valid parameter (noise reduction + edge loss < 5%%)\n");
-            fprintf("    >>> Early stopping.\n\n");
-            break;
-        end
-
-        [edge_new, noise_new] = edge_noise_metrics(best_candidate);
-        total_edge_loss = (edge_initial - edge_new) / (edge_initial + 1e-12);
-
-        fprintf("\n    >>> Best: %s | Ratio: %.2f\n", best_desc, best_ratio);
-        fprintf("    >>> Noise: %.6f -> %.6f\n", noise_current, noise_new);
-        fprintf("    >>> Total Edge Loss: %.2f%%\n\n", total_edge_loss*100);
-
-        I_step5 = best_candidate;
-        edge_current = edge_new;
-        noise_current = noise_new;
-    end
-
-    if step5_iteration >= max_step5_iterations
-        fprintf("  >> Max iterations (%d) reached.\n", max_step5_iterations);
-    else
-        fprintf("  >> Early stopped at iteration %d.\n", step5_iteration);
-    end
+    [I_step5, edge_current, noise_current, step5_iteration] = iterative_gaussian_smooth(...
+        I_final, 5, sigma_list, fs_list);
 
     Results5 = compare_original_restored(I_original, I_step5);
 
@@ -471,78 +231,12 @@ for idx = 1:length(image_names)
     %% ============================================================
     % STEP 6 — ITERATIVE NLM AGAIN (Same as Step 2)
     %% ============================================================
-    gaussian_threshold6 = 0.08;
-    max_nlm_iterations6 = 5;
-
-    I_step6 = I_step5;
-    gaussian6_current = estimate_gaussian_noise(I_step6);
-    nlm6_iteration = 0;
-
-    fprintf("\n--- STEP 6: Iterative NLM Again (Gaussian Noise Reduction) ---\n");
-    fprintf("Target Gaussian Threshold: %.2f\n", gaussian_threshold6);
-    fprintf("Initial Gaussian Noise (Est.): %.3f\n\n", gaussian6_current);
-
     degree_list6 = [5 10 15 20 30];
     sw_list6     = [11 21];
     cw_list6     = [3 5 7];
 
-    while gaussian6_current > gaussian_threshold6 && nlm6_iteration < max_nlm_iterations6
-        nlm6_iteration = nlm6_iteration + 1;
-
-        fprintf("  [NLM6 Iteration %d] - Current Noise: %.3f\n", nlm6_iteration, gaussian6_current);
-        fprintf("  Grid Search başlatılıyor...\n");
-
-        best_noise6     = inf;
-        best_desc6      = "";
-        best_candidate6 = I_step6;
-
-        for deg = degree_list6
-            for sw = sw_list6
-                for cw = cw_list6
-                    if cw > sw, continue; end
-
-                    candidate = imnlmfilt(I_step6, ...
-                        "DegreeOfSmoothing", deg, ...
-                        "SearchWindowSize", sw, ...
-                        "ComparisonWindowSize", cw);
-
-                    noise_est = estimate_gaussian_noise(candidate);
-
-                    fprintf("    deg=%d SW=%d CW=%d -> Noise=%.3f\n", deg, sw, cw, noise_est);
-
-                    if noise_est < best_noise6
-                        best_noise6     = noise_est;
-                        best_desc6      = sprintf("deg=%d,SW=%d,CW=%d", deg, sw, cw);
-                        best_candidate6 = candidate;
-                    end
-                end
-            end
-        end
-
-        if best_noise6 >= gaussian6_current
-            fprintf("\n    >>> No improvement found (Best: %.3f >= Current: %.3f)\n", ...
-                best_noise6, gaussian6_current);
-            fprintf("    >>> Early stopping - Step 6 terminated.\n\n");
-            break;
-        end
-
-        fprintf("\n    >>> Best: %s | Noise: %.3f -> %.3f (Improvement: %.3f)\n\n", ...
-            best_desc6, gaussian6_current, best_noise6, gaussian6_current - best_noise6);
-
-        I_step6 = best_candidate6;
-        gaussian6_current = best_noise6;
-    end
-
-    if gaussian6_current <= gaussian_threshold6
-        fprintf("  >> Gaussian threshold (%.2f) reached after %d iterations!\n", ...
-            gaussian_threshold6, nlm6_iteration);
-    elseif nlm6_iteration >= max_nlm_iterations6
-        fprintf("  >> Max NLM iterations (%d) reached. Final Gaussian: %.3f\n", ...
-            max_nlm_iterations6, gaussian6_current);
-    else
-        fprintf("  >> Early stopped at iteration %d. Final Gaussian: %.3f\n", ...
-            nlm6_iteration, gaussian6_current);
-    end
+    [I_step6, gaussian6_current, nlm6_iteration] = iterative_nlm_filter(...
+        I_step5, 0.08, 5, degree_list6, sw_list6, cw_list6, "STEP 6");
 
     Results6 = compare_original_restored(I_original, I_step6);
 
