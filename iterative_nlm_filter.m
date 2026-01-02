@@ -1,19 +1,5 @@
 function [I_out, final_noise, total_iterations] = iterative_nlm_filter(I_in, gaussian_threshold, max_iterations, degree_list, sw_list, cw_list, step_name)
-% ITERATIVE_NLM_FILTER - Iteratif Non-Local Means filtresi
-%
-% Girdi:
-%   I_in              - Giriş görüntüsü (uint8)
-%   gaussian_threshold - Hedef Gaussian gürültü eşiği
-%   max_iterations    - Maksimum iterasyon sayısı
-%   degree_list       - DegreeOfSmoothing değerleri listesi
-%   sw_list           - SearchWindowSize değerleri listesi
-%   cw_list           - ComparisonWindowSize değerleri listesi
-%   step_name         - Adım ismi (log için)
-%
-% Çıktı:
-%   I_out             - Filtrelenmiş görüntü (uint8)
-%   final_noise       - Son Gaussian gürültü değeri
-%   total_iterations  - Toplam iterasyon sayısı
+% Iterative Non-Local Means filtering for Gaussian noise reduction.
 
     I_out = I_in;
     gaussian_current = estimate_gaussian_noise(I_out);

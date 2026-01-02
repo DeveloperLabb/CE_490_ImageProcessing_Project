@@ -1,12 +1,6 @@
 function I_out = edge_masked_laplacian_enhance(I_sharpened, I_base)
-% EDGE_MASKED_LAPLACIAN_ENHANCE - Edge-masked Laplacian enhancement
-%
-% Girdi:
-%   I_sharpened - Keskinleştirilmiş görüntü (uint8) - Laplacian hesaplanacak
-%   I_base      - Baz görüntü (uint8) - Enhancement eklenecek
-%
-% Çıktı:
-%   I_out       - Geliştirilmiş görüntü (uint8)
+% Edge-masked Laplacian enhancement.
+% I_sharpened: sharpened image (uint8), I_base: base image (uint8)
 
     fprintf("\n--- STEP 4: Edge-Masked Laplacian Enhancement ---\n");
     

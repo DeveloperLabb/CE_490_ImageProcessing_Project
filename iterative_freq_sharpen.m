@@ -1,19 +1,5 @@
 function [I_out, final_edge, final_noise, total_iterations] = iterative_freq_sharpen(I_in, max_iterations, k_list, cutoff_list, ratio_threshold, noise_threshold)
-% ITERATIVE_FREQ_SHARPEN - Iteratif frekans bazlı keskinleştirme
-%
-% Girdi:
-%   I_in             - Giriş görüntüsü (uint8)
-%   max_iterations   - Maksimum iterasyon sayısı
-%   k_list           - k (boost factor) değerleri listesi
-%   cutoff_list      - cutoff frekans değerleri listesi
-%   ratio_threshold  - Noise/edge ratio eşiği
-%   noise_threshold  - Maksimum gürültü eşiği
-%
-% Çıktı:
-%   I_out            - Keskinleştirilmiş görüntü (uint8)
-%   final_edge       - Son edge değeri
-%   final_noise      - Son noise değeri
-%   total_iterations - Toplam iterasyon sayısı
+% Iterative frequency-domain sharpening with edge/noise ratio control.
 
     fprintf("\n--- STEP 3: Iterative Freq Sharpen (Edge > Noise Gain) ---\n");
 

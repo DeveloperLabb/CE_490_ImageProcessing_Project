@@ -1,17 +1,5 @@
 function [I_out, final_edge, final_noise, total_iterations] = iterative_gaussian_smooth(I_in, max_iterations, sigma_list, fs_list)
-% ITERATIVE_GAUSSIAN_SMOOTH - Iteratif Gaussian yumuşatma
-%
-% Girdi:
-%   I_in            - Giriş görüntüsü (uint8)
-%   max_iterations  - Maksimum iterasyon sayısı
-%   sigma_list      - Sigma değerleri listesi
-%   fs_list         - FilterSize değerleri listesi
-%
-% Çıktı:
-%   I_out           - Filtrelenmiş görüntü (uint8)
-%   final_edge      - Son edge değeri
-%   final_noise     - Son noise değeri
-%   total_iterations - Toplam iterasyon sayısı
+% Iterative Gaussian smoothing with edge preservation.
 
     fprintf("\n--- STEP 5: Iterative Gaussian Smoothing ---\n");
 
